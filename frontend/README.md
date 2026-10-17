@@ -59,6 +59,6 @@ firebase use --add PROJECT
 firebase deploy --only hosting
 ```
 
-It runs `npm ci` and `npm run build` here first and uploads only the build output. Set
+It runs `npm run build` here first and uploads only the build output. Set
 `VITE_API_URL` in `.env.production.local` to the Cloud Run API URL. Full steps are in the
-[root README](../README.md#6-frontend-on-firebase-hosting).
+[deploy guide](../docs/deploy.md#6-frontend-on-firebase-hosting).

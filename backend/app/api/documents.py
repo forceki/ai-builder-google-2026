@@ -90,12 +90,12 @@ class DocumentController(Controller):
         return DocumentOut.model_validate(doc)
 
     @get("/{document_id:uuid}")
-    async def get_document(self, db: AsyncSession, project_no: str, document_id: uuid.UUID) -> DocumentDetail:
-        return DocumentDetail.model_validate(await self._get(db, project_no, document_id))
+    async def get_document(self, db: AsyncSession, user: User, project_no: str, document_id: uuid.UUID) -> DocumentDetail:
+        return DocumentDetail.model_validate(await self._get(db, user, project_no, document_id))
 
     @get("/{document_id:uuid}/link")
-    async def file_link(self, db: AsyncSession, project_no: str, document_id: uuid.UUID) -> DocumentLinkOut:
-        doc = await self._get(db, project_no, document_id)
+    async def file_link(self, db: AsyncSession, user: User, project_no: str, document_id: uuid.UUID) -> DocumentLinkOut:
+        doc = await self._get(db, user, project_no, document_id)
         settings = get_settings()
         url = await storage.signed_url(
             settings.documents_bucket, doc.storage_key,
@@ -107,9 +107,9 @@ class DocumentController(Controller):
 
     @delete("/{document_id:uuid}", status_code=HTTP_200_OK)
     async def delete_document(
-        self, db: AsyncSession, queue: ArqRedis, project_no: str, document_id: uuid.UUID
+        self, db: AsyncSession, user: User, queue: ArqRedis, project_no: str, document_id: uuid.UUID
     ) -> CheckRunOut:
-        doc = await self._get(db, project_no, document_id)
+        doc = await self._get(db, user, project_no, document_id)
         if doc.status in (DocStatus.QUEUED, DocStatus.READING):
             raise ClientException(f"{doc.filename} is still being read; delete it once it has finished")
         project_id = doc.project_id
@@ -126,7 +126,7 @@ class DocumentController(Controller):
         self, db: AsyncSession, user: User, queue: ArqRedis, project_no: str, document_id: uuid.UUID, data: DocumentTypeUpdate
     ) -> DocumentOut:
         """Correct the document type and read the document again with the right schema."""
-        doc = await self._get(db, project_no, document_id)
+        doc = await self._get(db, user, project_no, document_id)
         doc.doc_type = DocType(data.doc_type)
         doc.status = DocStatus.QUEUED
         doc.extraction = None
@@ -135,7 +135,7 @@ class DocumentController(Controller):
         await publish(queue, doc.project_id, "document", id=doc.id, status=doc.status)
         return DocumentOut.model_validate(doc)
 
-    async def _get(self, db: AsyncSession, project_no: str, document_id: uuid.UUID) -> Document:
+    async def _get(self, db: AsyncSession, user: User, project_no: str, document_id: uuid.UUID) -> Document:
         project = await get_project(db, project_no, user)
         doc = await db.get(Document, document_id)
         if doc is None or doc.project_id != project.id:

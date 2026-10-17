@@ -1,205 +1,242 @@
 # Hibanako
 
-Every weld, every cert, one thread.
+**AI-powered quality documentation and traceability for manufacturing.**
+*From scattered documents to confident quality decisions.*
 
-Hibanako reads a welded-fabrication dossier — mill certificates, WPS/PQR and welder
-qualifications, production records, inspection drawings and NDT reports — with Google Gemini,
-links every weld back to its heat number and NDT evidence, runs the release rules and produces a
-signed traceability report.
+Hibanako reads a welded-fabrication dossier with Google Gemini, links every material certificate,
+weld, procedure and inspection into one traceability graph, and checks it against release rules.
+The result is a clear verdict — **PASS**, **HOLD** or **REJECT** — with a ranked list of exceptions,
+the evidence behind each one, and a report an engineer can sign.
+
+> *Hibanako* comes from *hibana*, spark.
+
+---
+
+## 1. Introduction
+
+### The problem
+
+Manufacturing quality records — material certificates, welding records, inspection results and
+production documents — live in separate files and formats. Before a product can ship, a quality
+engineer has to reconcile them by hand: does every plate have a certificate with the right heat
+number, is every weld tied to a qualified welder and procedure, does every weld have its NDT report?
+
+Manual reconciliation is slow and error-prone, which leads to:
+
+| | |
+| --- | --- |
+| **Delays in product release** | Shipments wait while engineers cross-check hundreds of pages |
+| **Missing or inconsistent evidence** | One swapped digit in a heat number can slip through |
+| **High administrative workload** | Skilled engineers spend hours on paperwork instead of quality |
+| **Rework and quality costs** | Gaps found late mean re-inspection, rework or rejected shipments |
+
+### Objective
+
+Build an AI-assisted system that **prioritises and verifies the most critical documentation
+checks** using the Pareto principle, making quality assurance faster and more reliable.
+
+## 2. Why we need it
+
+| | |
+| --- | --- |
+| **83%** | of engineers spend at least **4 hours per week** on procurement and supplier-related tasks, including supplier-quality management *(Fictiv Manufacturing Survey, 2026)* |
+| **52%** | of manufacturing leaders name supplier quality, reliability and compliance as significant challenges *(Fictiv Manufacturing Survey, 2025)* |
+| **33%** | of surveyed manufacturers have invested in unified data platforms with integration and analytical capabilities *(Dun & Bradstreet Manufacturing Pulse Survey, 2025)* |
+
+**Result:** documentation gaps remain a common and costly problem in manufacturing.
+
+## 3. Pareto analysis
+
+We ranked manufacturing quality problems by demand (30%), impact (25%), feasibility (20%),
+GenAI fit (15%) and differentiation (10%):
+
+| Rank | Problem | Score |
+| --- | --- | --- |
+| **1** | **Quality-document reconciliation and traceability** | **92** |
+| 2 | Supplier sourcing and order follow-up administration | 87 |
+| 3 | Nonconformance and corrective-action management | 85 |
+| 4 | Maintenance work-order triage and handover | 82 |
+| 5 | Calibration and inspection due-date tracking | 80 |
+| 6 | Scrap and rework analysis | 78 |
+
+Hibanako focuses on the highest-value problem: **document reconciliation and traceability**.
+
+## 4. Methods
+
+### Workflow
+
+| Step | What happens |
+| --- | --- |
+| **1. Document upload** | Upload material certificates, welding records, inspection reports and production documents — in bulk, in any order |
+| **2. AI data extraction** | Gemini classifies each document and extracts the key fields (heat numbers, part numbers, weld IDs, WPS, welders, NDT results, signatures) as structured data, linked to the source page |
+| **3. Traceability mapping** | Materials, parts, welds, procedures, welders and inspections are connected into one traceability graph |
+| **4. Deterministic checks** | Rule-based checks test completeness, consistency and procedure compliance |
+| **5. GenAI explanation** | Gemini explains each finding in plain language, points at the evidence and suggests the next step |
+| **6. Release report** | A ranked exception list with supporting evidence, signed by the engineer |
+
+### AI reads, rules decide
+
+Gemini does the work that needs language understanding: reading messy, scanned documents and
+explaining results. **The verdict never comes from the model.** PASS / HOLD / REJECT is decided by
+plain, testable code over the extracted data, so the same dossier always gets the same verdict and
+every finding traces back to the page it came from.
+
+### Documents it reads
+
+| Category | Examples |
+| --- | --- |
+| **Material** | Mill test certificates (EN 10204 3.1 / 3.2), material registers |
+| **Welding** | Weld logs, WPS / PQR, welder qualification records |
+| **NDT** | RT, UT, MT, PT and VT reports, NDT registers |
+| **Inspection** | Inspection and test plans, drawings, dimensional and hydrotest reports |
+| **Production** | Travelers, fit-up records, PWHT records, dossier index |
+
+### System architecture
+
+```mermaid
+flowchart LR
+    U([Engineer]) --> W["Web app<br/>Vue 3"]
+    W -- "REST /api" --> A["API<br/>Litestar"]
+    W <-. "WebSocket<br/>live updates" .-> A
+    A --> DB[("Postgres")]
+    A --> GCS[("Cloud Storage<br/>original PDFs")]
+    A -- "jobs" --> R[("Redis<br/>queue + pub/sub")]
+    R --> K["Worker"]
+    K --> G{{"Google Gemini"}}
+    K --> DB
+    K --> GCS
+    K -- "events" --> R
+```
+
+| Part | Role |
+| --- | --- |
+| **Web app** | Google sign-in, projects, workspace (documents, trace map, inspector) and printable report |
+| **API** | Auth, projects, uploads, signed download links, check runs, sign-off, live events |
+| **Worker** | Reads documents with Gemini, runs checks, writes explanations in the background |
+| **Postgres** | Users, projects, extracted data, trace map, findings, sign-offs, AI usage log |
+| **Redis** | Job queue, and pub/sub that streams progress to the browser |
+| **Cloud Storage** | Original files, private; opened through short-lived signed links |
+| **Gemini** | Classification, structured extraction, finding explanations |
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as API
+    participant W as Worker
+    participant G as Gemini
+    B->>A: upload PDFs
+    A->>W: queue each document
+    W->>G: classify + extract
+    W-->>B: live: reading → extracted
+    Note over W: waits until uploads settle
+    W->>W: build trace graph, run checks
+    W-->>B: live: verdict + map ready
+    W->>G: explain each finding
+    W-->>B: live: explanations ready
+    B->>A: engineer signs the report
+```
+
+- **One run per batch.** Uploading ten files triggers one check run, not ten.
+- **Verdict first, explanations second.** The map and verdict appear as soon as the rules finish.
+- **Signature integrity.** A signature records exactly which documents it covered. If any document
+  changes afterwards, the signature is marked **outdated** and the project needs re-signing.
+- **Private by owner.** Users only see their own projects; every Gemini call is logged with model
+  and token counts.
+
+## 5. Pareto-based scope
+
+The prototype focuses on the **critical few (20%) checks that carry most (80%) of the impact**:
+
+| # | Check | Question | Flags |
+| --- | --- | --- | --- |
+| **1** | **Material traceability** | Is the material certificate matched with the correct part and register? | Missing heat number or certificate (HOLD); heat number conflict (REJECT) |
+| **2** | **Welding-record linkage** | Is each weld linked to the required welding records and procedure? | WPS missing or not in the dossier; welder missing or unqualified; weld not on the traveler (HOLD) |
+| **3** | **NDT evidence** | Does every required weld have inspection results? | Required report missing (HOLD); report rejects the weld (REJECT) |
+| **4** | **Dossier completeness** | Are mandatory records missing, contradictory or awaiting sign-off? | PWHT required but not recorded; NDT report unsigned (HOLD) |
+
+Any REJECT makes the project REJECT; otherwise any HOLD makes it HOLD; otherwise it passes and is
+released once an engineer signs the report.
+
+## 6. Results
+
+Tested on synthetic dossiers in [`example-docs/`](example-docs/README.md), read by Gemini as-is
+with no hand corrections:
+
+| Dossier | Expected | Hibanako |
+| --- | --- | --- |
+| Clean, complete dossier | PASS | **PASS** — all four checks pass |
+| Supplier first issue with 12 planted defects | REJECT | **REJECT** — caught all 6 defects in scope of the four checks, **0 false alarms** on 5 deliberate look-alikes (e.g. `H-48213` vs `48213`, `W01` vs `W-01`) |
+
+Example output for the defective dossier:
+
+| Status | Check | Finding |
+| --- | --- | --- |
+| REJECT | Material traceability | Heat number conflict for part P1: 48213 (certificate) vs 48231 (fabrication record) |
+| REJECT | NDT evidence | RT-2233 rejects weld W-04 |
+| HOLD | NDT evidence | No RT report references weld W-03 |
+| HOLD | Welding-record linkage | W-03 references WPS-08, which is not in the dossier |
+| HOLD | Dossier completeness | WPS requires PWHT for W-04; no PWHT record found |
+The other 6 planted defects (expired welder qualification, welding current outside the WPS,
+drawing revision mismatch, unsigned certificate, missing hydrotest, tensile below minimum) need
+new rules, not better reading — they are the next step.
+
+### Try it
+
+The demo button on the login page opens three ready-made projects:
+
+| Project | Verdict | Story |
+| --- | --- | --- |
+| HBK-DEMO-001 | **PASS** | Complete dossier, signed and released |
+| HBK-DEMO-002 | **HOLD** | RT report for W-03 and a welder qualification missing; attach them and the welds turn PASS |
+| HBK-DEMO-003 | **REJECT** | Supplier first issue with planted defects |
+
+## 7. Discussion and impact
+
+| | |
+| --- | --- |
+| **Reduces repetitive administrative work** | Engineers review a short, ranked exception list instead of every page |
+| **Improves quality reliability** | Gaps and inconsistencies are caught early, with the same result every time |
+| **Supports faster product release** | Clear, evidence-based exceptions with next steps; release is one signature away |
+| **Scalable and practical** | A feasible starting point for digital quality assurance in small and medium manufacturers |
+
+**Next:** the six additional rules above, engineer actions (correct a value, mark not applicable,
+replace a file), an audit history, and an accuracy evaluation across repeated runs.
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Frontend | Vue 3, Vite, Tailwind CSS v4, Vuex, Vue Router |
+| Backend | Python 3.12, Litestar, SQLAlchemy (async), Alembic, arq, Pydantic |
+| AI | Google Gemini (`google-genai`, structured outputs) |
+| Data | PostgreSQL, Redis, Google Cloud Storage |
+| Auth | JWT, Google Identity Services |
+| Hosting | Docker, Firebase Hosting, Cloud Run |
+
+## Repository
 
 | Folder | What it is |
 | --- | --- |
-| [`backend/`](backend/README.md) | Litestar API, arq worker, Postgres models, Alembic migrations, Gemini extraction and rules |
-| [`frontend/`](frontend/README.md) | Vue 3 + Vite + Tailwind web app (landing page, workspace, report) |
-| [`example-docs/`](example-docs/README.md) | Synthetic sample dossiers to try uploads with |
-| `docker-compose.yml` | The whole stack in Docker: Postgres, Redis, API, worker and web |
+| [`backend/`](backend/README.md) | API, worker, AI extraction, rules, models, migrations, tests |
+| [`frontend/`](frontend/README.md) | Web app |
+| [`example-docs/`](example-docs/README.md) | Synthetic sample dossiers with their answer keys |
+| `docker-compose.yml` | Whole stack in Docker |
 | `firebase.json` | Firebase Hosting config for the frontend |
 
-```
-browser ──► web (nginx / Firebase Hosting) ──► api (Litestar) ──► Postgres
-                                                  │    ▲
-                                                  ▼    │ WebSocket events
-                                               Redis (queue + pub/sub)
-                                                  │
-                                                  ▼
-                                               worker (arq) ──► Gemini, Cloud Storage
-```
-
-## Run everything with Docker
-
-Requirements: Docker Desktop, a Gemini API key, a Cloud Storage bucket and a service-account key
-that can write to it.
+## Run it
 
 ```bash
 cp .env.example .env
-cp backend/.env.example backend/.env
-```
-
-1. In `backend/.env`, set at least `GEMINI_API_KEY`, `HIBANAKO_JWT_SECRET`,
-   `HIBANAKO_DOCUMENTS_BUCKET`, and `HIBANAKO_GOOGLE_CLIENT_ID` (for Google sign-in).
-2. Put the service-account key at `backend/gcs-key.json`, or point `GCS_KEY_FILE` in `.env` at it.
-   No bucket? Set `HIBANAKO_STORAGE_BACKEND=local` in `backend/.env` and keep any small JSON file at
-   `GCS_KEY_FILE`.
-3. In `.env`, set `VITE_GOOGLE_CLIENT_ID` to the same OAuth client ID.
-
-```bash
+cp backend/.env.example backend/.env      # set GEMINI_API_KEY, HIBANAKO_JWT_SECRET, bucket
 docker compose up -d --build
 docker compose exec api python -m app.demo
 ```
 
-Open http://localhost:8080. The API runs its migrations on start; `app.demo` creates the demo
-account and the three demo projects (HBK-DEMO-001 release, 002 hold, 003 reject).
+Open http://localhost:8080. For development without Docker, see the
+[backend](backend/README.md) and [frontend](frontend/README.md) READMEs.
 
-For Google sign-in, add `http://localhost:8080` to **Authorized JavaScript origins** of the OAuth
-client in Google Cloud Console.
+---
 
-Stop with `docker compose down` (add `-v` to also delete the database).
-
-## Develop locally
-
-```bash
-cd backend
-docker compose up -d db redis
-uv sync
-uv run alembic upgrade head
-uv run python -m app.demo
-uv run uvicorn app.main:app --reload --port 8000
-uv run arq app.worker.WorkerSettings
-```
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open http://localhost:5173 (Vite proxies `/api` and the WebSocket to port 8000).
-
-## Deploy to Google Cloud
-
-The frontend goes to **Firebase Hosting**; the backend goes to **Cloud Run**, with **Cloud SQL**
-(Postgres), **Memorystore** (Redis) and **Cloud Storage**. Both live in this one repo: Firebase only
-uploads `frontend/dist`, and Cloud Run builds only from `backend/`.
-
-Replace `PROJECT`, `REGION` (e.g. `asia-southeast2`) and the passwords below.
-
-### 1. One-time setup
-
-```bash
-gcloud config set project PROJECT
-gcloud services enable run.googleapis.com sqladmin.googleapis.com redis.googleapis.com \
-  artifactregistry.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com \
-  iamcredentials.googleapis.com
-
-gcloud artifacts repositories create hibanako --repository-format=docker --location=REGION
-
-gcloud iam service-accounts create hibanako-api
-SA=hibanako-api@PROJECT.iam.gserviceaccount.com
-gcloud storage buckets create gs://PROJECT-hibanako-documents --location=REGION
-gcloud storage buckets add-iam-policy-binding gs://PROJECT-hibanako-documents \
-  --member=serviceAccount:$SA --role=roles/storage.objectAdmin
-gcloud iam service-accounts add-iam-policy-binding $SA \
-  --member=serviceAccount:$SA --role=roles/iam.serviceAccountTokenCreator
-gcloud projects add-iam-policy-binding PROJECT --member=serviceAccount:$SA --role=roles/cloudsql.client
-gcloud projects add-iam-policy-binding PROJECT --member=serviceAccount:$SA --role=roles/secretmanager.secretAccessor
-```
-
-The token-creator role lets the API sign the temporary download links without a key file.
-
-### 2. Database and Redis
-
-```bash
-gcloud sql instances create hibanako-db --database-version=POSTGRES_17 --tier=db-f1-micro --region=REGION
-gcloud sql databases create hibanako --instance=hibanako-db
-gcloud sql users create hibanako --instance=hibanako-db --password=DB_PASSWORD
-
-gcloud redis instances create hibanako-redis --size=1 --region=REGION
-gcloud redis instances describe hibanako-redis --region=REGION --format='value(host)'
-```
-
-### 3. Secrets
-
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(48), end='')" | gcloud secrets create hibanako-jwt --data-file=-
-printf '%s' 'GEMINI_KEY' | gcloud secrets create hibanako-gemini --data-file=-
-printf '%s' 'postgresql+asyncpg://hibanako:DB_PASSWORD@/hibanako?host=/cloudsql/PROJECT:REGION:hibanako-db' \
-  | gcloud secrets create hibanako-db-url --data-file=-
-```
-
-### 4. API on Cloud Run
-
-```bash
-IMAGE=REGION-docker.pkg.dev/PROJECT/hibanako/backend
-gcloud builds submit backend --tag $IMAGE
-
-gcloud run deploy hibanako-api --image $IMAGE --region REGION --service-account $SA \
-  --allow-unauthenticated --port 8000 --timeout 3600 \
-  --add-cloudsql-instances PROJECT:REGION:hibanako-db \
-  --network default --subnet default --vpc-egress private-ranges-only \
-  --set-secrets HIBANAKO_DATABASE_URL=hibanako-db-url:latest,HIBANAKO_JWT_SECRET=hibanako-jwt:latest,GEMINI_API_KEY=hibanako-gemini:latest \
-  --set-env-vars "^@^HIBANAKO_REDIS_URL=redis://REDIS_HOST:6379/0@HIBANAKO_DOCUMENTS_BUCKET=PROJECT-hibanako-documents@HIBANAKO_GOOGLE_CLIENT_ID=OAUTH_CLIENT_ID@HIBANAKO_CORS_ORIGINS=[\"https://PROJECT.web.app\"]"
-```
-
-The container runs `alembic upgrade head` before it starts, so migrations apply on every deploy.
-`--timeout 3600` keeps the live-update WebSocket open for up to an hour (the app reconnects).
-
-### 5. Worker
-
-The worker has no HTTP port, so it runs as a Cloud Run **worker pool** from the same image:
-
-```bash
-gcloud beta run worker-pools deploy hibanako-worker --image $IMAGE --region REGION \
-  --service-account $SA --command arq --args app.worker.WorkerSettings \
-  --add-cloudsql-instances PROJECT:REGION:hibanako-db \
-  --network default --subnet default --vpc-egress private-ranges-only \
-  --set-secrets HIBANAKO_DATABASE_URL=hibanako-db-url:latest,HIBANAKO_JWT_SECRET=hibanako-jwt:latest,GEMINI_API_KEY=hibanako-gemini:latest \
-  --set-env-vars HIBANAKO_REDIS_URL=redis://REDIS_HOST:6379/0,HIBANAKO_DOCUMENTS_BUCKET=PROJECT-hibanako-documents
-```
-
-If worker pools are not available in your region, run the same image on a small Compute Engine VM
-with `docker run ... arq app.worker.WorkerSettings`.
-
-Demo data, once: run the image as a Cloud Run job with `--command python --args=-m,app.demo`,
-or `python -m app.demo` locally against the Cloud SQL Auth Proxy.
-
-### 6. Frontend on Firebase Hosting
-
-```bash
-npm install -g firebase-tools
-firebase login
-firebase use --add PROJECT
-```
-
-Create `frontend/.env.production.local` (git-ignored):
-
-```
-VITE_API_URL=https://hibanako-api-xxxxxxxx.REGION.run.app
-VITE_GOOGLE_CLIENT_ID=OAUTH_CLIENT_ID
-```
-
-Then, from the repo root:
-
-```bash
-firebase deploy --only hosting
-```
-
-`firebase.json` builds `frontend/` and uploads only `frontend/dist`; the backend folder is never
-uploaded. The app calls the API and its WebSocket directly at `VITE_API_URL`, so make sure
-`HIBANAKO_CORS_ORIGINS` on the API lists the Firebase domains (`https://PROJECT.web.app`, plus any
-custom domain).
-
-### 7. Google sign-in
-
-In Google Cloud Console → APIs & Services → Credentials → your OAuth client, add the Firebase URLs
-(`https://PROJECT.web.app`, `https://PROJECT.firebaseapp.com`, custom domain) to
-**Authorized JavaScript origins**. To allow only your company, set
-`HIBANAKO_GOOGLE_ALLOWED_DOMAINS=["company.com"]` on the API.
-
-### Checklist
-
-- [ ] New `HIBANAKO_JWT_SECRET` (never reuse the development one)
-- [ ] `HIBANAKO_CORS_ORIGINS` = the Firebase / custom domains
-- [ ] OAuth JavaScript origins include the production domains
-- [ ] Bucket is private; the API service account has object admin and token creator
-- [ ] Paid Gemini key for real customer documents
-- [ ] `python -m app.demo` run once if the demo button should work
+Built with Google Gemini · Deployed on Google Cloud

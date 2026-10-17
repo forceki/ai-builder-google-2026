@@ -75,4 +75,4 @@ docker run --env-file .env hibanako-backend arq app.worker.WorkerSettings
 
 The image runs `alembic upgrade head` and then uvicorn on `$PORT` (default 8000). The same image
 is used for the worker by overriding the command. Deployment to Cloud Run is described in the
-[root README](../README.md#deploy-to-google-cloud).
+[deploy guide](../docs/deploy.md).

@@ -1,0 +1,68 @@
+x-backend: &backend
+  build: ./backend
+  env_file:
+    - path: ./backend/.env
+      required: false
+  environment:
+    HIBANAKO_DATABASE_URL: postgresql+asyncpg://heatmark:heatmark@db:5432/heatmark
+    HIBANAKO_REDIS_URL: redis://redis:6379/0
+    HIBANAKO_GCS_CREDENTIALS_FILE: /secrets/gcs-key.json
+    HIBANAKO_CORS_ORIGINS: '["http://localhost:${WEB_PORT:-8080}"]'
+  volumes:
+    - ${GCS_KEY_FILE:-./backend/gcs-key.json}:/secrets/gcs-key.json:ro
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: heatmark
+      POSTGRES_PASSWORD: heatmark
+      POSTGRES_DB: heatmark
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heatmark"]
+      interval: 2s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    <<: *backend
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 5s
+      retries: 30
+
+  worker:
+    <<: *backend
+    command: ["arq", "app.worker.WorkerSettings"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+    ports: ["${WEB_PORT:-8080}:80"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

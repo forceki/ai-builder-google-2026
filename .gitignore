@@ -12,6 +12,7 @@ var/
 # Dependencies and build output
 node_modules/
 dist/
+.firebase/
 .venv/
 __pycache__/
 .pytest_cache/

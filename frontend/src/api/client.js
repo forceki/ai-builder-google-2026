@@ -7,6 +7,7 @@ export class ApiError extends Error {
   }
 }
 
+const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
 const TOKEN_KEY = 'hm-token'
 let token = null
 try {
@@ -38,7 +39,7 @@ async function request(method, path, { json, form } = {}) {
   const headers = {}
   if (json) headers['Content-Type'] = 'application/json'
   if (token) headers.Authorization = `Bearer ${token}`
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${API_URL}/api${path}`, {
     method,
     headers,
     body: json ? JSON.stringify(json) : form,
@@ -88,7 +89,8 @@ export const api = {
   trace: (no) => request('GET', `${p(no)}/trace`),
   events(no) {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
-    return new WebSocket(`${scheme}://${location.host}/api${p(no)}/events`, ['hibanako', token])
+    const base = API_URL ? API_URL.replace(/^http/, 'ws') : `${scheme}://${location.host}`
+    return new WebSocket(`${base}/api${p(no)}/events`, ['hibanako', token])
   },
   signoff: {
     get: (no) => request('GET', `${p(no)}/signoff`),

@@ -73,8 +73,11 @@ const edges = computed(() =>
       const y1 = a.y + NH / 2
       const x2 = b.x - 3
       const y2 = b.y + NH / 2
-      const bend = (x2 - x1) * 0.45
-      const d = `M${x1} ${y1} C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`
+      const lead = 14
+      const cx1 = x1 + lead
+      const cx2 = x2 - lead
+      const bend = (cx2 - cx1) * 0.45
+      const d = `M${x1} ${y1} H${cx1} C${cx1 + bend} ${y1} ${cx2 - bend} ${y2} ${cx2} ${y2} H${x2}`
       const on = pathLinks.value.has(i)
       const dim = !!sel.value && !on
       return l.kind === 'conflict'
@@ -191,7 +194,7 @@ defineExpose({ fit, focusNode, findFirst })
 
           <svg :width="CW" :height="CH" :viewBox="`0 0 ${CW} ${CH}`" aria-hidden="true" class="pointer-events-none absolute top-0 left-0 overflow-visible font-mono">
             <defs>
-              <marker id="hmArrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+              <marker id="hmArrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
                 <path d="M0 0 L8 4 L0 8 Z" class="fill-ink"/>
               </marker>
             </defs>

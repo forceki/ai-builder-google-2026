@@ -1,4 +1,4 @@
-# Example documents to try Heatmark yourself
+# Example documents to try Hibanako yourself
 
 Four quality dossiers for one fictional piping spool (Spool 04, LOT 24-117). Everything is **synthetic**:
 companies, people, heat numbers and results are invented, and every page says "SYNTHETIC DOCUMENT".

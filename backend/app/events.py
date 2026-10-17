@@ -8,7 +8,7 @@ log = logging.getLogger(__name__)
 
 
 def channel(project_id: uuid.UUID | str) -> str:
-    return f"heatmark:project:{project_id}"
+    return f"hibanako:project:{project_id}"
 
 
 async def publish(redis: Redis, project_id: uuid.UUID | str, event: str, **data: object) -> None:

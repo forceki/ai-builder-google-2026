@@ -1,7 +1,7 @@
 import { api, session } from '../../api/client'
 
-export const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL || 'demo@heatmark.app'
-export const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || 'heatmark-demo'
+export const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL || 'demo@hibanako.app'
+export const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || 'hibanako-demo'
 
 export default {
   namespaced: true,

@@ -77,7 +77,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <input v-model="scope" type="text" maxlength="200" placeholder="e.g. LOT 24-117 · 4 WELDS" class="field" />
           <span class="text-[13px] leading-[1.35] text-muted">Shown under the name in the project list.</span>
         </label>
-        <p v-if="!editing" class="m-0 font-mono text-[11px] text-muted">The project number (PRJ-…) is assigned automatically.</p>
+        <p v-if="!editing" class="m-0 font-mono text-[11px] text-muted">The project number (HBK-…) is assigned automatically.</p>
         <p v-if="error" role="alert" class="m-0 border border-reject px-3 py-2 font-mono text-xs text-reject">{{ error }}</p>
       </div>
 

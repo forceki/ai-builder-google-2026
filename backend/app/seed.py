@@ -1,4 +1,4 @@
-"""Load the PRJ-2026-041 specimen project into the database.
+"""Load the HBK-2026-041 specimen project into the database.
 
     uv run python -m app.seed             # skip if it already exists
     uv run python -m app.seed --reset     # delete and recreate it
@@ -20,8 +20,8 @@ from app.pipeline.run import execute_run
 from app.specimen import specimen
 
 PROJECTS = [
-    ("PRJ-2026-041", "Pressure vessel skid", "ASSY PS-3 · 18 WELDS", True),
-    ("PRJ-2026-045", "Platform handrails", "NOT SCOPED", False),
+    ("HBK-2026-041", "Pressure vessel skid", "ASSY PS-3 · 18 WELDS", True),
+    ("HBK-2026-045", "Platform handrails", "NOT SCOPED", False),
 ]
 NEEDS_REVIEW = {"FAB-REC_031.pdf"}
 

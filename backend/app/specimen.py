@@ -1,4 +1,4 @@
-"""Extractions for the PRJ-2026-041 specimen dossier (the project shown in the UI).
+"""Extractions for the HBK-2026-041 specimen dossier (the project shown in the UI).
 
 Used by the seed command and the tests."""
 

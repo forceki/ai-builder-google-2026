@@ -11,7 +11,7 @@ export default {
     sample: {
       status: 'HOLD',
       meta: [
-        { label: 'PROJECT NO.', value: 'HM-24-0193' },
+        { label: 'PROJECT NO.', value: 'HBK-2026-041' },
         { label: 'ASSEMBLY', value: 'PS-3 PIPE SUPPORT' },
         { label: 'DATE', value: '2026-10-14' },
         { label: 'INSPECTOR', value: 'R. LINDQVIST' },

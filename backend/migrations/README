@@ -15,7 +15,7 @@ Useful:
     uv run alembic downgrade -1    undo the last migration
     uv run alembic upgrade head --sql > upgrade.sql   SQL to review or hand to a DBA
 
-The database URL comes from HEATMARK_DATABASE_URL (or .env), the same as the app.
+The database URL comes from HIBANAKO_DATABASE_URL (or .env), the same as the app.
 The Docker image runs `alembic upgrade head` before starting the API. The worker never migrates.
 
 New empty database:      uv run alembic upgrade head

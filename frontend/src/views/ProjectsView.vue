@@ -221,7 +221,7 @@ const onSaved = () => {
       <p class="m-0">Delete <b>{{ deleting.name }}</b> ({{ deleting.no }})?</p>
       <p class="m-0">
         This removes its {{ deleting.docs }} {{ deleting.docs === 1 ? 'document' : 'documents' }}, the map, all check results
-        and sign-offs from Heatmark. This can't be undone. The original files stay in cloud storage.
+        and sign-offs from Hibanako. This can't be undone. The original files stay in cloud storage.
       </p>
     </ConfirmDialog>
   </div>

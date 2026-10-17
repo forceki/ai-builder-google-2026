@@ -1,5 +1,6 @@
 <script setup>
 import PoweredBy from '../ui/PoweredBy.vue'
+import BrandStamp from '../ui/BrandStamp.vue'
 
 const links = [
   { label: 'Process', href: '#process' },
@@ -19,9 +20,15 @@ const sheet = [
 <template>
   <footer class="border-t border-ink font-mono text-xs">
     <div class="wrap flex flex-wrap justify-between gap-x-10 gap-y-7 pt-8 pb-7">
-      <div class="flex flex-col gap-2">
-        <span class="font-sans text-[28px] leading-none font-black tracking-[-0.02em] [font-stretch:115%]">HEATMARK</span>
-        <span class="text-muted">QUALITY TRACEABILITY SYSTEM</span>
+      <div class="flex max-w-[460px] flex-col gap-2">
+        <span class="flex items-center gap-2.5">
+          <BrandStamp class="size-11" />
+          <span class="font-sans text-[28px] leading-none font-black tracking-[0.06em] [font-stretch:115%]">HIBANAKO</span>        </span>
+        <span class="font-sans text-[15px] font-bold">Every weld, every cert, one thread.</span>
+        <span class="text-muted">QUALITY TRACEABILITY SYSTEM / REV. A</span>
+        <span class="leading-relaxed text-muted">
+          Hibanako — from hibana, spark. Built with Google Gemini · Deployed on Google Cloud.
+        </span>
       </div>
       <dl class="m-0 flex flex-wrap gap-x-8 gap-y-4">
         <div v-for="s in sheet" :key="s.label" class="flex flex-col gap-1">
@@ -38,7 +45,7 @@ const sheet = [
         </template>
       </nav>
       <div class="flex flex-wrap items-center gap-5 text-muted">
-        <span>© 2026 HEATMARK</span>
+        <span>© 2026 HIBANAKO</span>
         <PoweredBy />
       </div>
     </div>

@@ -102,7 +102,7 @@ class DocumentController(Controller):
             filename=doc.filename, content_type=doc.content_type, minutes=settings.signed_url_minutes,
         )
         if url is None:
-            raise ClientException("file links need Google Cloud Storage (HEATMARK_STORAGE_BACKEND=gcs)")
+            raise ClientException("file links need Google Cloud Storage (HIBANAKO_STORAGE_BACKEND=gcs)")
         return DocumentLinkOut(url=url, expires_at=utcnow() + timedelta(minutes=settings.signed_url_minutes))
 
     @delete("/{document_id:uuid}", status_code=HTTP_200_OK)

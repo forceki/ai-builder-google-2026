@@ -5,6 +5,7 @@ import { useStore } from 'vuex'
 import AppBar from '../components/app/AppBar.vue'
 import Breadcrumb from '../components/app/Breadcrumb.vue'
 import RuleStamp from '../components/ui/RuleStamp.vue'
+import BrandStamp from '../components/ui/BrandStamp.vue'
 import { heatText } from '../data/workspace'
 import { clockTime, isoDate, worst } from '../lib/status'
 
@@ -13,7 +14,7 @@ const store = useStore()
 
 const projectNo = computed(() => route.params.no)
 const workspaceLink = computed(() => `/projects/${projectNo.value}`)
-const reportNo = computed(() => `HM-RR-${projectNo.value.split('-').pop()}`)
+const reportNo = computed(() => `HBK-RPT-${projectNo.value.split('-').pop().replace(/\D/g, '').padStart(4, '0')}`)
 const crumbs = computed(() => [
   { label: 'PROJECTS', to: '/projects' },
   { label: projectNo.value, to: workspaceLink.value },
@@ -166,7 +167,9 @@ const h2 = 'm-0 font-mono text-xs tracking-[0.08em]'
       <article v-else aria-label="Release readiness report" class="mx-auto max-w-[920px] border border-ink bg-white print:max-w-none print:border-0">
         <div class="flex flex-wrap items-start justify-between gap-5 border-b-2 border-ink px-[clamp(20px,4vw,40px)] pt-7 pb-6">
           <div class="flex flex-col gap-2">
-            <span class="font-mono text-[11px] tracking-[0.08em] text-faint">HEATMARK · FORM HM-RR-01 · REV. A</span>
+            <span class="flex items-center gap-2 font-mono text-[11px] tracking-[0.08em] text-faint">
+              <BrandStamp class="size-6" />HIBANAKO RELEASE READINESS REPORT · {{ reportNo }} · REV. A
+            </span>
             <h1 class="m-0 text-[clamp(30px,4vw,44px)] leading-[0.95] font-extrabold tracking-[-0.035em]">Release readiness report</h1>
             <span class="text-base">{{ r.project?.name }} · {{ projectNo }}</span>
           </div>
@@ -376,7 +379,7 @@ const h2 = 'm-0 font-mono text-xs tracking-[0.08em]'
         </section>
 
         <div class="flex flex-wrap justify-between gap-2 border-t-2 border-ink px-[clamp(20px,4vw,40px)] py-2.5 font-mono text-[10.5px] tracking-[0.06em] text-muted print:break-before-avoid">
-          <span>HEATMARK · {{ reportNo }} · REV. A</span><span>SHEET 1 OF 1</span><span>POWERED BY SHOYUPURO</span>
+          <span>HIBANAKO · {{ reportNo }} · REV. A</span><span>SHEET 1 OF 1</span><span>POWERED BY SHOYUPURO</span>
         </div>
       </article>
     </main>

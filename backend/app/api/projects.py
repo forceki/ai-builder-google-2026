@@ -69,7 +69,7 @@ class ProjectController(Controller):
         if no and await db.scalar(select(Project.id).where(Project.no == no)):
             raise ClientException(f"project number {no} is already taken")
         if not no:
-            prefix = f"PRJ-{datetime.now(UTC).year}-"
+            prefix = f"HBK-{datetime.now(UTC).year}-"
             taken = (await db.scalars(select(Project.no).where(Project.no.like(f"{prefix}%")))).all()
             last = max((int(n.removeprefix(prefix)) for n in taken if n.removeprefix(prefix).isdigit()), default=0)
             no = f"{prefix}{last + 1:03d}"

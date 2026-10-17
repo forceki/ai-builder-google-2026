@@ -1,6 +1,6 @@
 """Document storage: Google Cloud Storage, or a local directory for tests and offline work.
 
-GCS auth: a service-account JSON key (HEATMARK_GCS_CREDENTIALS_FILE), or else Application
+GCS auth: a service-account JSON key (HIBANAKO_GCS_CREDENTIALS_FILE), or else Application
 Default Credentials (`gcloud auth application-default login`, or the runtime's identity when deployed).
 """
 

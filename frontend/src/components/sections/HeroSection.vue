@@ -13,11 +13,12 @@ import TraceDrawing from './TraceDrawing.vue'
   >
     <div class="flex min-w-0 flex-[1_1_420px] flex-col gap-7">
       <SectionLabel num="02" label="OVERVIEW" />
-      <h1 id="hero-h" class="m-0 text-[clamp(48px,7vw,104px)] leading-[0.92] font-extrabold tracking-[-0.045em] text-balance">
-        Every weld, every cert, one thread.
+      <h1 id="hero-h" class="m-0 max-w-[620px] text-[clamp(36px,4.6vw,66px)] leading-[0.98] font-extrabold tracking-[-0.04em] text-balance">
+        Heat number to NDT report. Verified.
       </h1>
+      <p class="m-0 text-[clamp(19px,1.8vw,24px)] leading-tight font-bold tracking-[-0.01em]">Every weld, every cert, one thread.</p>
       <p data-reveal class="m-0 max-w-[480px] text-[clamp(17px,1.5vw,20px)] leading-[1.45] text-pretty">
-        Heatmark uses AI to read your material certificates, weld records and inspection reports, connects them into one
+        Hibanako uses AI to read your material certificates, weld records and inspection reports, connects them into one
         traceable thread, and shows exactly what's missing before you release.
       </p>
       <div class="flex flex-wrap items-center gap-6 pt-2">
@@ -47,7 +48,7 @@ import TraceDrawing from './TraceDrawing.vue'
           <span class="flex flex-col items-center gap-1.5"><StatusDot status="PASS" size="size-2.5" />REJECT</span>
         </div>
         <figcaption class="flex-[1_1_200px] leading-normal text-muted">
-          DWG HM-A-0021 · PIPE SUPPORT ASSY · 1:5<br />One part, traced from material heat to weld to inspection record.
+          DWG HBK-A-0021 · PIPE SUPPORT ASSY · 1:5<br />One part, traced from material heat to weld to inspection record.
         </figcaption>
         <span aria-hidden="true" class="flex items-center gap-2.5">
           <span class="relative block size-[38px] rounded-full border-[3px] border-pending bg-graphite">

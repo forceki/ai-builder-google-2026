@@ -4,7 +4,7 @@ import SectionLabel from '../ui/SectionLabel.vue'
 const principles = [
   { title: 'Rules decide.', text: 'Pass, hold and reject come from deterministic rules you can read and audit; the AI only explains the result.' },
   { title: 'Every finding has a source.', text: 'Each finding links to the document and page it came from.' },
-  { title: 'Engineers sign off.', text: 'Heatmark prepares the release decision. A qualified engineer makes it.' },
+  { title: 'Engineers sign off.', text: 'Hibanako prepares the release decision. A qualified engineer makes it.' },
 ]
 </script>
 

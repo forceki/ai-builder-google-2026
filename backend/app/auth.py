@@ -51,7 +51,7 @@ async def authenticate_google(session: AsyncSession, credential: str) -> User:
     email = claims["email"].strip().lower()
     allowed = {d.strip().lower() for d in s.google_allowed_domains if d.strip()}
     if allowed and email.rsplit("@", 1)[-1] not in allowed:
-        raise GoogleSignInError(f"{email} is not allowed to sign in to Heatmark", forbidden=True)
+        raise GoogleSignInError(f"{email} is not allowed to sign in to Hibanako", forbidden=True)
 
     user = await session.scalar(select(User).where(User.email == email))
     if user is None:
@@ -140,7 +140,7 @@ async def _add_user(email: str, name: str, role: str | None, password: str) -> N
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Manage Heatmark sign-in accounts.")
+    p = argparse.ArgumentParser(description="Manage Hibanako sign-in accounts.")
     sub = p.add_subparsers(dest="cmd", required=True)
     add = sub.add_parser("add-user", help="create a user, or reset an existing user's password")
     add.add_argument("email")

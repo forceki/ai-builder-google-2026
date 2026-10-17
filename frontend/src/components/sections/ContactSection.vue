@@ -20,7 +20,7 @@ const onSubmit = () => store.dispatch('demo/request', email.value)
       @submit.prevent="onSubmit"
     >
       <div class="flex justify-between gap-3 font-mono text-[11px] tracking-[0.08em] text-muted">
-        <span>DEMO REQUEST</span><span>FORM HM-DR-01</span>
+        <span>DEMO REQUEST</span><span>FORM HBK-DR-01</span>
       </div>
       <div class="flex flex-wrap items-end gap-3.5">
         <label class="flex flex-[1_1_280px] flex-col gap-2">

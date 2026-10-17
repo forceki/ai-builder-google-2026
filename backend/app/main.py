@@ -1,4 +1,4 @@
-"""Heatmark API.  Run with:  uvicorn app.main:app --reload"""
+"""Hibanako API.  Run with:  uvicorn app.main:app --reload"""
 
 from litestar import Litestar, get
 from litestar.config.cors import CORSConfig

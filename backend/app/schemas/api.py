@@ -37,7 +37,7 @@ class LoginOut(BaseModel):
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     scope: str = "NOT SCOPED"
-    no: str | None = Field(default=None, description="Project number; generated (PRJ-<year>-<seq>) if omitted")
+    no: str | None = Field(default=None, description="Project number; generated (HBK-<year>-<seq>) if omitted")
 
 
 class ProjectUpdate(BaseModel):

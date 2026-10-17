@@ -116,7 +116,7 @@ const onSignOut = () => store.dispatch('auth/signOut')
             ></span>
             <span aria-live="polite">{{ statusText }}</span>
           </span>
-          <span>FORM HM-LG-01</span>
+          <span>FORM HBK-LG-01</span>
         </div>
 
         <div v-if="signedIn" role="status" class="flex flex-col items-start gap-4 py-6">
@@ -172,7 +172,7 @@ const onSignOut = () => store.dispatch('auth/signOut')
 
     <footer class="border-t border-ink font-mono text-xs">
       <div class="wrap flex flex-wrap items-center justify-between gap-4 py-[18px] text-muted">
-        <span>SHEET 00 · REV. A · © 2026 HEATMARK</span>
+        <span>SHEET 00 · REV. A · © 2026 HIBANAKO</span>
         <PoweredBy />
       </div>
     </footer>

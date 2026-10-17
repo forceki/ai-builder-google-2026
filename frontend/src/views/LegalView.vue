@@ -30,7 +30,7 @@ const anchor = (i) => `s-${String(i + 1).padStart(2, '0')}`
       <article :aria-labelledby="`${doc}-h`" class="mx-auto max-w-[920px] border border-ink bg-white">
         <div class="flex flex-wrap items-end justify-between gap-5 border-b-2 border-ink px-[clamp(20px,4vw,40px)] pt-7 pb-6">
           <div class="flex max-w-[620px] flex-col gap-3">
-            <span class="font-mono text-[11px] tracking-[0.08em] text-faint">HEATMARK · FORM {{ page.form }} · REV. A</span>
+            <span class="font-mono text-[11px] tracking-[0.08em] text-faint">HIBANAKO · FORM {{ page.form }} · REV. A</span>
             <h1 :id="`${doc}-h`" class="m-0 text-[clamp(32px,4.5vw,52px)] leading-[0.95] font-extrabold tracking-[-0.035em]">
               {{ page.title }}
             </h1>
@@ -76,7 +76,7 @@ const anchor = (i) => `s-${String(i + 1).padStart(2, '0')}`
         </section>
 
         <div class="flex flex-wrap justify-between gap-2 border-t-2 border-ink px-[clamp(20px,4vw,40px)] py-2.5 font-mono text-[10.5px] tracking-[0.06em] text-muted">
-          <span>HEATMARK · {{ page.form }} · REV. A</span>
+          <span>HIBANAKO · {{ page.form }} · REV. A</span>
           <RouterLink :to="other.to" class="text-muted underline-offset-[3px]">{{ other.label }} →</RouterLink>
         </div>
       </article>
@@ -84,7 +84,7 @@ const anchor = (i) => `s-${String(i + 1).padStart(2, '0')}`
 
     <footer class="border-t border-ink font-mono text-xs">
       <div class="wrap flex flex-wrap items-center justify-between gap-4 py-[18px] text-muted">
-        <span>© 2026 HEATMARK</span>
+        <span>© 2026 HIBANAKO</span>
         <PoweredBy />
       </div>
     </footer>

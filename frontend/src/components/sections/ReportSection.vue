@@ -29,7 +29,7 @@ const sample = computed(() => store.state.report.sample)
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="flex flex-col gap-1">
             <span class="font-sans text-[22px] font-black tracking-[-0.01em]">Release readiness report</span>
-            <span class="text-[11px] text-muted">FORM HM-RR-01</span>
+            <span class="text-[11px] text-muted">FORM HBK-RPT-01</span>
           </div>
           <StatusStamp :status="sample.status" :rot="-5" size="lg" />
         </div>

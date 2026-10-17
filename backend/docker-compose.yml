@@ -9,8 +9,8 @@ x-app: &app
     - path: .env
       required: false
   environment:
-    HEATMARK_DATABASE_URL: postgresql+asyncpg://heatmark:heatmark@db:5432/heatmark
-    HEATMARK_REDIS_URL: redis://redis:6379/0
+    HIBANAKO_DATABASE_URL: postgresql+asyncpg://heatmark:heatmark@db:5432/heatmark
+    HIBANAKO_REDIS_URL: redis://redis:6379/0
     # GCS credentials: mount your gcloud ADC file (from `gcloud auth application-default login`).
     GOOGLE_APPLICATION_CREDENTIALS: /secrets/adc.json
   volumes:

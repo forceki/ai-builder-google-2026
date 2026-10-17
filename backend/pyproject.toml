@@ -1,7 +1,7 @@
 [project]
-name = "heatmark"
+name = "hibanako"
 version = "0.1.0"
-description = "Heatmark quality traceability backend: document extraction, traceability mapping and rule checks."
+description = "Hibanako quality traceability backend: document extraction, traceability mapping and rule checks."
 requires-python = ">=3.12"
 dependencies = [
     "google-genai>=2.31,<3",

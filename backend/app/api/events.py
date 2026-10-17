@@ -9,7 +9,7 @@ from app.config import get_settings
 from app.events import channel
 from app.models import Project, User
 
-PROTOCOL = "heatmark"
+PROTOCOL = "hibanako"
 PING_SECONDS = 20.0
 
 

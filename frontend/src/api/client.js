@@ -1,4 +1,4 @@
-// Thin client for the Heatmark backend (/api, proxied to the Litestar app in development).
+// Thin client for the Hibanako backend (/api, proxied to the Litestar app in development).
 
 export class ApiError extends Error {
   constructor(status, detail) {
@@ -88,7 +88,7 @@ export const api = {
   trace: (no) => request('GET', `${p(no)}/trace`),
   events(no) {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
-    return new WebSocket(`${scheme}://${location.host}/api${p(no)}/events`, ['heatmark', token])
+    return new WebSocket(`${scheme}://${location.host}/api${p(no)}/events`, ['hibanako', token])
   },
   signoff: {
     get: (no) => request('GET', `${p(no)}/signoff`),

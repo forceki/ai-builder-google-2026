@@ -1,11 +1,29 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import BrandMark from '../ui/BrandMark.vue'
 import ThemeToggle from '../ui/ThemeToggle.vue'
 
 const store = useStore()
 const signedIn = computed(() => store.getters['auth/signedIn'])
+
+const scrolled = ref(false)
+const bar = ref(null)
+const onScroll = () => (scrolled.value = window.scrollY > 8)
+let sizer = null
+onMounted(() => {
+  onScroll()
+  window.addEventListener('scroll', onScroll, { passive: true })
+  sizer = new ResizeObserver(([entry]) =>
+    document.documentElement.style.setProperty('--site-header-h', `${Math.round(entry.target.offsetHeight)}px`),
+  )
+  sizer.observe(bar.value)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onScroll)
+  sizer?.disconnect()
+  document.documentElement.style.removeProperty('--site-header-h')
+})
 
 const nav = [
   { num: '04', label: 'Process', href: '#process' },
@@ -16,7 +34,12 @@ const nav = [
 </script>
 
 <template>
-  <header class="wrap flex flex-wrap items-center justify-between gap-x-8 gap-y-5 py-5">
+  <div
+    ref="bar"
+    class="sticky top-0 z-40 border-b bg-paper transition-[padding,border-color] duration-200"
+    :class="scrolled ? 'border-ink py-0' : 'border-transparent py-2'"
+  >
+  <header class="wrap flex flex-wrap items-center justify-between gap-x-8 gap-y-3 py-3">
     <BrandMark :to="{ path: '/', hash: '#top' }" />
 
     <nav aria-label="Primary" class="flex flex-wrap gap-x-7 gap-y-1.5 font-mono text-[13px]">
@@ -37,4 +60,5 @@ const nav = [
       </a>
     </div>
   </header>
+  </div>
 </template>

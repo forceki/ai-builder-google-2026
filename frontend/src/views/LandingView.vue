@@ -10,12 +10,14 @@ import ReportSection from '../components/sections/ReportSection.vue'
 import PrinciplesSection from '../components/sections/PrinciplesSection.vue'
 import ContactSection from '../components/sections/ContactSection.vue'
 import SiteFooter from '../components/sections/SiteFooter.vue'
+import TraceBackground from '../components/sections/TraceBackground.vue'
 
 useMotion()
 </script>
 
 <template>
-  <div class="min-h-screen bg-paper font-sans text-ink">
+  <TraceBackground />
+  <div class="relative z-[1] min-h-screen font-sans text-ink">
     <SiteHeader />
     <main>
       <HeroSection />

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
+import BrandStamp from '../ui/BrandStamp.vue'
 import ThemeToggle from '../ui/ThemeToggle.vue'
 
 defineProps({
@@ -22,10 +23,11 @@ const signOut = () => {
 
 <template>
   <header class="flex flex-wrap items-center gap-x-5 gap-y-2.5 border-b border-ink bg-paper px-4 py-2">
-    <RouterLink to="/" class="flex flex-none items-center gap-2.5 no-underline">
-      <span aria-hidden="true" class="size-2.5 border border-ink bg-signal"></span>
-      <span class="text-xl leading-none font-black tracking-[-0.02em] [font-stretch:115%]">HEATMARK</span>
+    <RouterLink to="/" class="flex flex-none items-center gap-2 no-underline" aria-label="Hibanako home">
+      <BrandStamp class="size-8" />
+      <span class="text-xl leading-none font-black tracking-[0.06em] [font-stretch:115%]">HIBANAKO</span>
     </RouterLink>
+    <span aria-hidden="true" class="-mx-2 font-mono text-[11px] text-faint">/</span>
     <slot name="title">
       <span class="flex-[1_1_160px] font-mono text-[11px] font-bold tracking-[0.06em]">{{ title }}</span>
     </slot>

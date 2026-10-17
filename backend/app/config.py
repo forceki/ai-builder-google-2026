@@ -7,9 +7,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Runtime configuration, read from HEATMARK_* environment variables (or .env)."""
+    """Runtime configuration, read from HIBANAKO_* environment variables (or .env)."""
 
-    model_config = SettingsConfigDict(env_prefix="HEATMARK_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="HIBANAKO_", env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+asyncpg://heatmark:heatmark@localhost:5433/heatmark"
     redis_url: str = "redis://localhost:6380/0"
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     gcp_project: str | None = None  # defaults to the project of the credentials
     # Service-account JSON key. If unset, Application Default Credentials are used.
     gcs_credentials_file: Path | None = None
-    documents_bucket: str = "heatmark-documents"
+    documents_bucket: str = "hibanako-documents"
     storage_dir: Path = Path("./var/storage")
     max_upload_mb: int = 50
     signed_url_minutes: int = 15
@@ -31,8 +31,8 @@ class Settings(BaseSettings):
 
     jwt_secret: SecretStr
     jwt_ttl_hours: int = 12
-    demo_email: str = "demo@heatmark.app"
-    demo_password: SecretStr = SecretStr("heatmark-demo")
+    demo_email: str = "demo@hibanako.app"
+    demo_password: SecretStr = SecretStr("hibanako-demo")
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
     google_allowed_domains: list[str] = []
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # Gemini (google-genai). Key from GEMINI_API_KEY in the environment or .env.
     gemini_api_key: SecretStr | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     # Development: Flash for everything (cheap, has a free tier). For production accuracy,
-    # set HEATMARK_EXTRACT_MODEL=gemini-4-argon and HEATMARK_EXTRACT_THINKING=HIGH.
+    # set HIBANAKO_EXTRACT_MODEL=gemini-4-argon and HIBANAKO_EXTRACT_THINKING=HIGH.
     extract_model: str = "gemini-3.8-flash"
     fast_model: str = "gemini-3.8-flash"
     classify_thinking: str = "LOW"
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     @classmethod
     def _long_enough(cls, v: SecretStr) -> SecretStr:
         if len(v.get_secret_value()) < 32:
-            raise ValueError("HEATMARK_JWT_SECRET must be at least 32 characters")
+            raise ValueError("HIBANAKO_JWT_SECRET must be at least 32 characters")
         return v
 
     @field_validator(

@@ -21,10 +21,10 @@ CONTENT_TYPES = {
 }
 
 PROJECTS = [
-    ("DEMO-2026-003", "Spool 04 · supplier first issue", "LOT 24-117 · 5 WELDS", "defective", set(), None),
-    ("DEMO-2026-002", "Spool 04 · interim dossier", "LOT 24-117 · 4 WELDS", "clean",
+    ("HBK-DEMO-003", "Spool 04 · supplier first issue", "LOT 24-117 · 5 WELDS", "defective", set(), None),
+    ("HBK-DEMO-002", "Spool 04 · interim dossier", "LOT 24-117 · 4 WELDS", "clean",
      {"RT-2232_W-03.pdf", "WPQ_W-512.pdf"}, None),
-    ("DEMO-2026-001", "Spool 04 · final dossier", "LOT 24-117 · 4 WELDS", "clean", set(),
+    ("HBK-DEMO-001", "Spool 04 · final dossier", "LOT 24-117 · 4 WELDS", "clean", set(),
      ("release", "All four checks pass. Released for shipment.")),
 ]
 SIGNER = "Demo QA inspector"

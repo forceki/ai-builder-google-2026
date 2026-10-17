@@ -1,0 +1,55 @@
+# Postgres, Redis, the API and the background worker.
+#   docker compose up -d db redis          # just the services; run API/worker with uv
+#   docker compose up --build              # everything
+# Host ports 5433 / 6380 avoid clashing with a local Postgres / Redis.
+
+x-app: &app
+  build: .
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    HEATMARK_DATABASE_URL: postgresql+asyncpg://heatmark:heatmark@db:5432/heatmark
+    HEATMARK_REDIS_URL: redis://redis:6379/0
+    # GCS credentials: mount your gcloud ADC file (from `gcloud auth application-default login`).
+    GOOGLE_APPLICATION_CREDENTIALS: /secrets/adc.json
+  volumes:
+    - ${HOME}/.config/gcloud/application_default_credentials.json:/secrets/adc.json:ro
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: heatmark
+      POSTGRES_PASSWORD: heatmark
+      POSTGRES_DB: heatmark
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heatmark"]
+      interval: 2s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6380:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 20
+
+  api:
+    <<: *app
+    ports: ["8000:8000"]
+
+  worker:
+    <<: *app
+    command: ["arq", "app.worker.WorkerSettings"]
+
+volumes:
+  pgdata:

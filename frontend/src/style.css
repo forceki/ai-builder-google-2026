@@ -1,0 +1,182 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #111111;
+  --color-paper: #f2f2f2;
+  --color-panel: #e6e6e6;
+  --color-graphite: #1a1a1a;
+  --color-muted: #555555;
+  --color-pending: #cccccc;
+  --color-bolt: #d4d4d4;
+  --color-signal: #ff4f00;
+  --color-faint: #6e6e6e;
+  --color-pass: #1f6b3a;
+  --color-reject: #c4271b;
+
+  --font-sans: 'Archivo', Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    scroll-behavior: smooth;
+  }
+  /* Dark mode is a whole-page inversion, as in the design */
+  html[data-hm-theme='dark'] {
+    filter: invert(1) hue-rotate(180deg);
+  }
+  @media print {
+    html[data-hm-theme='dark'] {
+      filter: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  a {
+    color: var(--color-ink);
+  }
+  a:hover {
+    text-decoration-thickness: 2px;
+  }
+  *:focus-visible {
+    outline: 2px solid var(--color-signal);
+    outline-offset: 3px;
+  }
+}
+
+@utility wrap {
+  max-width: 1320px;
+  margin-inline: auto;
+  padding-inline: clamp(20px, 4vw, 48px);
+}
+
+@utility h-section {
+  margin: 0;
+  font-weight: 800;
+  font-size: clamp(34px, 4.4vw, 60px);
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+}
+
+@utility btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  background: var(--color-signal);
+  color: var(--color-ink);
+  border: 1px solid var(--color-ink);
+  border-radius: 4px;
+  box-shadow: inset 0 -4px 0 rgb(17 17 17 / 0.35);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  &:active {
+    transform: translateY(3px);
+    box-shadow: inset 0 -1px 0 rgb(17 17 17 / 0.35);
+  }
+}
+
+@utility field {
+  border: 1px solid rgb(17 17 17 / 0.4);
+  border-radius: 3px;
+  background: #ffffff;
+  box-shadow: inset 0 2px 0 rgb(17 17 17 / 0.07);
+  padding: 14px;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--color-ink);
+  outline: none;
+  &:focus {
+    border-color: var(--color-ink);
+    box-shadow: inset 0 2px 0 rgb(17 17 17 / 0.07), 0 0 0 2px var(--color-signal);
+  }
+}
+
+@theme {
+  --animate-blink: blink 0.8s steps(2, end) infinite;
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
+  }
+}
+
+/* Square "tool" button used across the app screens; colours/size set per use. */
+@utility btn-hard {
+  border: 1px solid var(--color-ink);
+  border-bottom-width: 3px;
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  cursor: pointer;
+  &:active:not(:disabled) {
+    transform: translateY(2px);
+    border-bottom-width: 1px;
+  }
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+@utility bg-grid {
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(rgb(17 17 17 / 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(17 17 17 / 0.05) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+@keyframes hm-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes hm-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes hm-stamp {
+  0% { opacity: 0; transform: scale(1.6); }
+  70% { opacity: 1; }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes hm-slide {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes hm-bar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(260%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media print {
+  [data-noprint] {
+    display: none !important;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

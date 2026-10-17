@@ -35,8 +35,8 @@ const steps = [
               class="flex size-14 flex-none items-center justify-center rounded font-mono text-base font-bold"
               :class="
                 i === steps.length - 1
-                  ? 'border border-ink bg-signal shadow-[inset_0_-4px_0_rgb(17_17_17/0.3)]'
-                  : 'border border-ink/30 bg-white shadow-[inset_0_-4px_0_rgb(17_17_17/0.14)]'
+                  ? 'border border-ink bg-signal shadow-[inset_0_-4px_0_rgb(var(--shade)/0.3)]'
+                  : 'border border-ink/30 bg-white shadow-[inset_0_-4px_0_rgb(var(--shade)/0.14)]'
               "
             >{{ String(i + 1).padStart(2, '0') }}</span>
             <span v-if="i < steps.length - 1" class="h-px flex-1 bg-ink"></span>

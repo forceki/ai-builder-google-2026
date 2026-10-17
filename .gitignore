@@ -3,6 +3,10 @@
 .env.*
 !.env.example
 *-key.json
+# Google downloads: OAuth client (client_secret_*.json) and service-account keys
+client_secret*.json
+*service-account*.json
+credentials*.json
 var/
 
 # Dependencies and build output

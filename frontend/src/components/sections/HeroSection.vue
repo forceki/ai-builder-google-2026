@@ -32,11 +32,11 @@ import TraceDrawing from './TraceDrawing.vue'
     </div>
 
     <figure
-      class="relative m-0 min-w-0 flex-[1.25_1_520px] rounded border border-ink/18 bg-panel px-7 pt-7 pb-5 shadow-[inset_0_-3px_0_rgb(17_17_17/0.1)]"
+      class="relative m-0 min-w-0 flex-[1.25_1_520px] rounded border border-ink/18 bg-panel px-7 pt-7 pb-5 shadow-[inset_0_-3px_0_rgb(var(--shade)/0.1)]"
     >
       <PanelBolts />
 
-      <div class="rounded-[3px] border border-ink/22 bg-white shadow-[inset_0_2px_0_rgb(17_17_17/0.06)]">
+      <div class="rounded-[3px] border border-ink/22 bg-white shadow-[inset_0_2px_0_rgb(var(--shade)/0.06)]">
         <TraceDrawing />
       </div>
 

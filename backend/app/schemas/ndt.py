@@ -13,7 +13,10 @@ class NdtReport(Entry):
     welds: list[str] = Field(description="Weld IDs covered by this report")
     result: Literal["accept", "reject", "unknown"]
     technician_level: str | None = Field(description="Technician certification level, e.g. LEVEL II")
-    signed: bool = Field(description="True only if the report carries a signature for the responsible level")
+    signed: bool = Field(
+        description="True if the signature field of the responsible NDT level is filled in: a handwritten or typed "
+        "name, initials or a stamp. False if it is blank, a dash, or marked as not signed"
+    )
 
 
 class NdtReports(BaseModel):

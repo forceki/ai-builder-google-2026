@@ -6,7 +6,9 @@ from app.schemas._base import Entry
 
 
 class NdtRequirement(Entry):
-    welds: list[str] = Field(description='Weld IDs the requirement applies to, or ["ALL"]')
+    welds: list[str] = Field(
+        description='Weld IDs the requirement applies to, or ["ALL"] when it covers every weld (e.g. "100 % RT")'
+    )
     methods: list[str] = Field(description="Required NDT methods, e.g. UT, RT")
     extent: str | None = Field(description="Extent, e.g. 100%, 10%")
 

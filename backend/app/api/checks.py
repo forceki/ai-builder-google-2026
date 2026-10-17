@@ -8,11 +8,13 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_project
 from app.config import get_settings
+from app.events import publish
 from app.models import CheckRun, Signoff, TraceItem, TraceLink
 from app.models._common import utcnow
 from app.models.check import RunStatus
 from app.queue import RUN_CHECKS
 from app.schemas.api import CheckRunOut, SignoffIn, SignoffOut, TraceItemOut, TraceLinkOut, TraceMapOut
+from app.signoffs import active_signoff, current_fingerprint
 
 
 async def _latest_run(db: AsyncSession, project_id, *, complete_only: bool = False) -> CheckRun | None:
@@ -21,15 +23,6 @@ async def _latest_run(db: AsyncSession, project_id, *, complete_only: bool = Fal
         q = q.where(CheckRun.status == RunStatus.COMPLETE)
     return await db.scalar(
         q.options(selectinload(CheckRun.findings)).order_by(CheckRun.created_at.desc()).limit(1)
-    )
-
-
-async def _active_signoff(db: AsyncSession, project_id) -> Signoff | None:
-    return await db.scalar(
-        select(Signoff)
-        .where(Signoff.project_id == project_id, Signoff.revoked_at.is_(None))
-        .order_by(Signoff.signed_at.desc())
-        .limit(1)
     )
 
 
@@ -43,6 +36,7 @@ class CheckController(Controller):
         db.add(run)
         await db.commit()
         await queue.enqueue_job(RUN_CHECKS, str(run.id))
+        await publish(queue, project.id, "run", id=run.id, status=run.status)
         return CheckRunOut.model_validate(run)
 
     @get("/checks/latest")
@@ -67,8 +61,8 @@ class CheckController(Controller):
     @get("/signoff")
     async def get_signoff(self, db: AsyncSession, project_no: str) -> SignoffOut | None:
         project = await get_project(db, project_no)
-        signoff = await _active_signoff(db, project.id)
-        return SignoffOut.model_validate(signoff) if signoff else None
+        signoff, current = await active_signoff(db, project.id)
+        return SignoffOut.model_validate(signoff).model_copy(update={"current": current}) if signoff else None
 
     @post("/signoff")
     async def sign(self, db: AsyncSession, project_no: str, data: SignoffIn) -> SignoffOut:
@@ -78,21 +72,27 @@ class CheckController(Controller):
         run = await _latest_run(db, project.id, complete_only=True)
         if run is None:
             raise ClientException("run the checks before signing off")
+        inputs = (run.summary or {}).get("inputs")
+        if inputs and inputs != await current_fingerprint(db, project.id):
+            raise ClientException("documents changed after the last check run; wait for the checks to finish")
         if data.decision == "release" and run.findings:
             raise ClientException(f"release is blocked: {len(run.findings)} findings are open on the last run")
-        if await _active_signoff(db, project.id):
+        existing, current = await active_signoff(db, project.id)
+        if existing and current:
             raise ClientException("the report is already signed; revoke the signature first")
+        if existing:
+            existing.revoked_at = utcnow()
 
         signoff = Signoff(project_id=project.id, run_id=run.id, decision=data.decision,
                           name=data.name.strip(), comment=data.comment.strip())
         db.add(signoff)
         await db.flush()
-        return SignoffOut.model_validate(signoff)
+        return SignoffOut.model_validate(signoff).model_copy(update={"current": True})
 
     @delete("/signoff")
     async def revoke(self, db: AsyncSession, project_no: str) -> None:
         project = await get_project(db, project_no)
-        signoff = await _active_signoff(db, project.id)
+        signoff, _ = await active_signoff(db, project.id)
         if signoff is None:
             raise NotFoundException("no active signature")
         signoff.revoked_at = utcnow()

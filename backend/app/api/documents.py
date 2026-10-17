@@ -1,13 +1,15 @@
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Annotated
 
 from arq.connections import ArqRedis
-from litestar import Controller, get, patch, post
+from litestar import Controller, delete, get, patch, post
 from litestar.datastructures import UploadFile
 from litestar.enums import RequestEncodingType
 from litestar.exceptions import ClientException, NotFoundException
 from litestar.params import Body
+from litestar.status_codes import HTTP_200_OK
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,10 +18,12 @@ from app.ai.classify import guess_from_filename
 from app.ai.inputs import UnreadableFile, page_count
 from app.api.deps import get_project
 from app.config import get_settings
-from app.models import Document
+from app.events import publish
+from app.models import CheckRun, Document
+from app.models._common import utcnow
 from app.models.document import DocStatus, DocType
-from app.queue import PROCESS_DOCUMENT
-from app.schemas.api import DocumentDetail, DocumentOut, DocumentTypeUpdate
+from app.queue import PROCESS_DOCUMENT, RUN_CHECKS
+from app.schemas.api import CheckRunOut, DocumentDetail, DocumentLinkOut, DocumentOut, DocumentTypeUpdate
 
 ALLOWED = {".pdf", ".jpg", ".jpeg", ".png", ".webp", ".xlsx", ".xlsm", ".csv", ".txt"}
 
@@ -82,11 +86,40 @@ class DocumentController(Controller):
         db.add(doc)
         await db.commit()  # the worker must see the row before it picks up the job
         await queue.enqueue_job(PROCESS_DOCUMENT, str(doc.id))
+        await publish(queue, project.id, "document", id=doc.id, status=doc.status)
         return DocumentOut.model_validate(doc)
 
     @get("/{document_id:uuid}")
     async def get_document(self, db: AsyncSession, project_no: str, document_id: uuid.UUID) -> DocumentDetail:
         return DocumentDetail.model_validate(await self._get(db, project_no, document_id))
+
+    @get("/{document_id:uuid}/link")
+    async def file_link(self, db: AsyncSession, project_no: str, document_id: uuid.UUID) -> DocumentLinkOut:
+        doc = await self._get(db, project_no, document_id)
+        settings = get_settings()
+        url = await storage.signed_url(
+            settings.documents_bucket, doc.storage_key,
+            filename=doc.filename, content_type=doc.content_type, minutes=settings.signed_url_minutes,
+        )
+        if url is None:
+            raise ClientException("file links need Google Cloud Storage (HEATMARK_STORAGE_BACKEND=gcs)")
+        return DocumentLinkOut(url=url, expires_at=utcnow() + timedelta(minutes=settings.signed_url_minutes))
+
+    @delete("/{document_id:uuid}", status_code=HTTP_200_OK)
+    async def delete_document(
+        self, db: AsyncSession, queue: ArqRedis, project_no: str, document_id: uuid.UUID
+    ) -> CheckRunOut:
+        doc = await self._get(db, project_no, document_id)
+        if doc.status in (DocStatus.QUEUED, DocStatus.READING):
+            raise ClientException(f"{doc.filename} is still being read; delete it once it has finished")
+        project_id = doc.project_id
+        await db.delete(doc)
+        run = CheckRun(project_id=project_id, rule_set=get_settings().rule_set, findings=[])
+        db.add(run)
+        await db.commit()
+        await queue.enqueue_job(RUN_CHECKS, str(run.id))
+        await publish(queue, project_id, "run", id=run.id, status=run.status)
+        return CheckRunOut.model_validate(run)
 
     @patch("/{document_id:uuid}")
     async def set_type(
@@ -99,6 +132,7 @@ class DocumentController(Controller):
         doc.extraction = None
         await db.commit()
         await queue.enqueue_job(PROCESS_DOCUMENT, str(doc.id))
+        await publish(queue, doc.project_id, "document", id=doc.id, status=doc.status)
         return DocumentOut.model_validate(doc)
 
     async def _get(self, db: AsyncSession, project_no: str, document_id: uuid.UUID) -> Document:

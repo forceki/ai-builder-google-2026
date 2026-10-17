@@ -4,11 +4,13 @@ explain the findings, and store everything on the CheckRun."""
 import asyncio
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.explain import explain
+from app.ai.usage import ai_context
 from app.models import CheckRun, Document, Finding, TraceItem, TraceLink
 from app.models._common import utcnow
 from app.models.check import RunStatus
@@ -16,16 +18,29 @@ from app.models.document import DocStatus, DocType
 from app.pipeline.mapper import Extracted, build_graph, to_map
 from app.rules import run_all
 from app.rules.types import RuleFinding, Status, TraceGraph
+from app.signoffs import current_fingerprint
 
 log = logging.getLogger(__name__)
 
 EXPLAIN_CONCURRENCY = 4
 
 
-async def execute_run(session: AsyncSession, run: CheckRun, *, with_explanations: bool = True) -> None:
+async def _quiet(status: str) -> None:
+    return None
+
+
+async def execute_run(
+    session: AsyncSession,
+    run: CheckRun,
+    *,
+    with_explanations: bool = True,
+    notify: Callable[[str], Awaitable[None]] = _quiet,
+) -> None:
     run.status = RunStatus.RUNNING
     await session.commit()
+    await notify(RunStatus.RUNNING)
     try:
+        inputs = await current_fingerprint(session, run.project_id)
         docs = (await session.scalars(
             select(Document).where(
                 Document.project_id == run.project_id,
@@ -40,13 +55,14 @@ async def execute_run(session: AsyncSession, run: CheckRun, *, with_explanations
 
         results = run_all(graph)
         findings = [f for r in results for f in r.findings]
-        explanations = await _explain_all(findings) if with_explanations else [(None, None)] * len(findings)
-        for f, (text, next_step) in zip(findings, explanations, strict=True):
-            session.add(Finding(
+        rows = [
+            Finding(
                 run_id=run.id, check_id=f.check, rule_id=f.rule, item_key=f.item, status=f.status,
                 message=f.message, sources=[{"document": s.document, "page": s.page} for s in f.sources],
-                explanation=text, next_step=next_step,
-            ))
+            )
+            for f in findings
+        ]
+        session.add_all(rows)
 
         # An item counts once, at its worst status.
         item_status: dict[str, Status] = {}
@@ -67,6 +83,8 @@ async def execute_run(session: AsyncSession, run: CheckRun, *, with_explanations
             "documents": len(docs),
             "welds": len(graph.welds),
             "fields": sum(_field_count(d.extraction) for d in docs if d.extraction),
+            "explaining": with_explanations and bool(findings),
+            "inputs": inputs,
         }
         run.status = RunStatus.COMPLETE
     except Exception as e:
@@ -75,7 +93,26 @@ async def execute_run(session: AsyncSession, run: CheckRun, *, with_explanations
         run = await session.get(CheckRun, run.id)
         run.status = RunStatus.FAILED
         run.error = str(e)[:2000]
+        findings, rows = [], []
     run.finished_at = utcnow()
+    await session.commit()
+    await notify(run.status)
+
+    if run.status == RunStatus.COMPLETE and run.summary["explaining"]:
+        await _add_explanations(session, run, findings, rows)
+        await notify("explained")
+
+
+async def _add_explanations(session: AsyncSession, run: CheckRun, findings: list[RuleFinding],
+                            rows: list[Finding]) -> None:
+    try:
+        with ai_context(project_id=run.project_id):
+            explanations = await _explain_all(findings)
+        for row, (text, next_step) in zip(rows, explanations, strict=True):
+            row.explanation, row.next_step = text, next_step
+    except Exception:
+        log.exception("explanations for run %s failed", run.id)
+    run.summary = {**run.summary, "explaining": False}
     await session.commit()
 
 
@@ -97,7 +134,8 @@ async def _explain_all(findings: list[RuleFinding]) -> list[tuple[str | None, st
     async def one(f: RuleFinding) -> tuple[str | None, str | None]:
         async with sem:
             try:
-                e = await explain(f)
+                with ai_context(item_key=f.item):
+                    e = await explain(f)
                 return e.explanation, e.next_step
             except Exception:  # noqa: BLE001 - any model, API or network error
                 log.warning("explanation failed for %s %s", f.rule, f.item, exc_info=True)

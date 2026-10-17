@@ -6,10 +6,11 @@ import AppBar from '../components/app/AppBar.vue'
 import Breadcrumb from '../components/app/Breadcrumb.vue'
 import DocumentsPanel from '../components/workspace/DocumentsPanel.vue'
 import MapPanel from '../components/workspace/MapPanel.vue'
+import SignoffBanner from '../components/workspace/SignoffBanner.vue'
 import InspectorPanel from '../components/workspace/InspectorPanel.vue'
 import StatusStrip from '../components/workspace/StatusStrip.vue'
 import UploadDialog from '../components/workspace/UploadDialog.vue'
-import { STAGE_LABELS, guess } from '../data/workspace'
+import { STAGE_LABELS } from '../data/workspace'
 
 const route = useRoute()
 const store = useStore()
@@ -47,12 +48,11 @@ function openInspector() {
 }
 
 const upload = ref(null)
-// p: { file?: File, group?, id? (open item the file is evidence for) }
+// p: { files?: File[], group?, id? (open item the file is evidence for) }
 function openUpload(p = {}) {
   upload.value = {
-    file: p.file ?? null,
-    group: p.group || (p.file ? guess(p.file.name) : ''),
-    detected: p.file ? guess(p.file.name) : '',
+    files: p.files ?? [],
+    group: p.group || '',
     link: p.id || '',
   }
 }
@@ -108,19 +108,21 @@ const tabs = [
       </template>
     </AppBar>
 
-    <div v-if="narrow" role="tablist" aria-label="Panels" class="flex border-b border-ink font-mono text-xs tracking-[0.06em]">
-      <button
-        v-for="t in tabs"
-        :key="t.key"
-        type="button"
-        role="tab"
-        :aria-selected="tab === t.key"
-        class="flex-1 cursor-pointer border-r border-ink px-3 py-2.5 text-left font-bold"
-        :class="tab === t.key ? 'bg-ink text-paper' : 'bg-white'"
-        @click="tab = t.key"
-      >{{ t.label }}</button>
+    <div>
+      <SignoffBanner />
+      <div v-if="narrow" role="tablist" aria-label="Panels" class="flex border-b border-ink font-mono text-xs tracking-[0.06em]">
+        <button
+          v-for="t in tabs"
+          :key="t.key"
+          type="button"
+          role="tab"
+          :aria-selected="tab === t.key"
+          class="flex-1 cursor-pointer border-r border-ink px-3 py-2.5 text-left font-bold"
+          :class="tab === t.key ? 'bg-ink text-paper' : 'bg-white'"
+          @click="tab = t.key"
+        >{{ t.label }}</button>
+      </div>
     </div>
-    <div v-else></div>
 
     <div class="grid min-h-0" :class="narrow ? 'grid-cols-[minmax(0,1fr)]' : 'grid-cols-[300px_minmax(0,1fr)_360px]'">
       <DocumentsPanel v-show="shows('A')" />

@@ -98,7 +98,7 @@ const fixLabel = (rule) => ({ mtc: 'Upload certificate', ndt: 'Upload NDT report
             </div>
             <div class="flex items-baseline gap-3">
               <span class="w-[72px] flex-none font-mono text-[10.5px] font-bold tracking-[0.06em] text-muted">TO FIX</span>
-              <span class="text-[13.5px] leading-[1.4]">{{ it.next_step || 'Upload the record that clears this finding, then run checks again.' }}</span>
+              <span class="font-read text-[14px] leading-[1.55]">{{ it.next_step || 'Upload the record that clears this finding, then run checks again.' }}</span>
             </div>
             <div v-if="it.evidence" class="flex items-baseline gap-3">
               <span class="w-[72px] flex-none font-mono text-[10.5px] font-bold tracking-[0.06em] text-muted">STATUS</span>

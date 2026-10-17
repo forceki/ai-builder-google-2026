@@ -1,6 +1,11 @@
 <script setup>
+import { computed } from 'vue'
+import { useStore } from 'vuex'
 import BrandMark from '../ui/BrandMark.vue'
 import ThemeToggle from '../ui/ThemeToggle.vue'
+
+const store = useStore()
+const signedIn = computed(() => store.getters['auth/signedIn'])
 
 const nav = [
   { num: '04', label: 'Process', href: '#process' },
@@ -22,7 +27,8 @@ const nav = [
 
     <div class="flex items-center gap-5">
       <ThemeToggle />
-      <RouterLink to="/login" class="font-mono text-[13px] underline-offset-4">Log in</RouterLink>
+      <RouterLink v-if="signedIn" to="/projects" class="font-mono text-[13px] underline-offset-4">Projects →</RouterLink>
+      <RouterLink v-else to="/login" class="font-mono text-[13px] underline-offset-4">Log in</RouterLink>
       <a
         href="#contact"
         class="inline-flex items-center gap-2.5 rounded bg-graphite px-4 py-[11px] font-mono text-xs font-bold tracking-[0.08em] text-paper uppercase no-underline shadow-[inset_0_-3px_0_#000] hover:text-paper active:translate-y-0.5 active:shadow-[inset_0_-1px_0_#000]"

@@ -27,6 +27,7 @@ class Extracted:
 
 def build_graph(docs: list[Extracted]) -> TraceGraph:
     g = TraceGraph()
+    fitups: list[tuple[str, list[str]]] = []
     for doc in docs:
         src = lambda page, _f=doc.filename: Source(_f, page)  # noqa: E731
         match doc.data:
@@ -35,7 +36,8 @@ def build_graph(docs: list[Extracted]) -> TraceGraph:
                     h = n.heat_no(c.heat_no)
                     g.heats.setdefault(h, Heat(h, c.grade, src(c.page)))
 
-            case ProductionRecords(parts=parts, pwht_records=pwht):
+            case ProductionRecords(parts=parts, pwht_records=pwht, fitups=fits):
+                fitups += [(n.weld_id(f.weld_id), [n.part_no(p) for p in f.parts]) for f in fits]
                 for p in parts:
                     no = n.part_no(p.part_no)
                     part = g.parts.setdefault(no, Part(no, p.description))
@@ -60,7 +62,8 @@ def build_graph(docs: list[Extracted]) -> TraceGraph:
                     )
                 for p in procs:
                     pid = n.wps_id(p.wps_id)
-                    g.procedures[pid] = Procedure(pid, p.pwht_required, src(p.page))
+                    g.procedures[pid] = Procedure(pid, p.pwht_required, src(p.page),
+                                                  frozenset(n.weld_id(w) for w in p.pwht_welds))
                 for q in quals:
                     g.qualified_welders.add(n.welder_id(q.welder_id))
 
@@ -80,6 +83,10 @@ def build_graph(docs: list[Extracted]) -> TraceGraph:
                         key = "ALL" if w.strip().upper() == "ALL" else n.weld_id(w)
                         prev, _ = g.ndt_required.get(key, (set(), None))
                         g.ndt_required[key] = (prev | methods, src(req.page))
+
+    for weld_id, part_nos in fitups:
+        if weld := g.welds.get(weld_id):
+            weld.parts += [p for p in part_nos if p not in weld.parts]
     return g
 
 

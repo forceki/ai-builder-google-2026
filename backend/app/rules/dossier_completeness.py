@@ -13,7 +13,7 @@ def run(graph: TraceGraph) -> list[RuleFinding]:
     # R-DOS-02: PWHT required by the weld's procedure but not recorded.
     for weld in graph.welds.values():
         proc = graph.procedures.get(weld.wps or "")
-        if proc and proc.pwht_required and weld.weld_id not in graph.pwht_done:
+        if proc and proc.requires_pwht(weld.weld_id) and weld.weld_id not in graph.pwht_done:
             findings.append(RuleFinding(
                 CHECK, "R-DOS-02", weld.weld_id, Status.HOLD,
                 f"{proc.wps_id} requires post-weld heat treatment for {weld.weld_id}; no PWHT record found.",

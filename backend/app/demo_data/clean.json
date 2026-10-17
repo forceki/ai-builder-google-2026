@@ -1,0 +1,403 @@
+[
+ {
+  "filename": "B313-SPOOL-04-REV-C.pdf",
+  "doc_type": "insp",
+  "pages": 1,
+  "size": 2736,
+  "needs_review": false,
+  "extraction": {
+   "ndt_requirements": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "welds": [
+      "ALL"
+     ],
+     "methods": [
+      "RT"
+     ],
+     "extent": "100%"
+    }
+   ]
+  }
+ },
+ {
+  "filename": "Dossier_index.pdf",
+  "doc_type": "prod",
+  "pages": 1,
+  "size": 3080,
+  "needs_review": false,
+  "extraction": {
+   "parts": [],
+   "pwht_records": []
+  }
+ },
+ {
+  "filename": "Fabrication_record_spool04.pdf",
+  "doc_type": "prod",
+  "pages": 1,
+  "size": 3312,
+  "needs_review": true,
+  "extraction": {
+   "parts": [
+    {
+     "page": 1,
+     "confidence": "low",
+     "part_no": "P1",
+     "description": "Pipe 6in SCH 80",
+     "drawing": "B313-SPOOL-04 rev C",
+     "heat_no": "48213"
+    },
+    {
+     "page": 1,
+     "confidence": "low",
+     "part_no": "P2",
+     "description": "Pipe 6in SCH 80",
+     "drawing": "B313-SPOOL-04 rev C",
+     "heat_no": "48213"
+    },
+    {
+     "page": 1,
+     "confidence": "low",
+     "part_no": "E1",
+     "description": "Elbow 6in 90 LR SCH 80",
+     "drawing": "B313-SPOOL-04 rev C",
+     "heat_no": "60231"
+    },
+    {
+     "page": 1,
+     "confidence": "low",
+     "part_no": "R1",
+     "description": "Reducer 6x4in SCH 80",
+     "drawing": "B313-SPOOL-04 rev C",
+     "heat_no": "60232"
+    },
+    {
+     "page": 1,
+     "confidence": "low",
+     "part_no": "F1",
+     "description": "Flange 4in Cl.300 WN",
+     "drawing": "B313-SPOOL-04 rev C",
+     "heat_no": "51907"
+    }
+   ],
+   "pwht_records": []
+  }
+ },
+ {
+  "filename": "Hydrotest_HT-0412.pdf",
+  "doc_type": "insp",
+  "pages": 1,
+  "size": 2612,
+  "needs_review": false,
+  "extraction": {
+   "ndt_requirements": []
+  }
+ },
+ {
+  "filename": "MTC_3.1_Heat48213_pipe.pdf",
+  "doc_type": "mtc",
+  "pages": 1,
+  "size": 3505,
+  "needs_review": false,
+  "extraction": {
+   "certificates": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "certificate_no": "MTC-88412",
+     "heat_no": "48213",
+     "grade": "ASTM A106 Gr.B",
+     "product": "Seamless pipe 6in SCH 80, 168.3 x 10.97 mm",
+     "cert_type": "EN 10204 type 3.1"
+    }
+   ]
+  }
+ },
+ {
+  "filename": "MTC_3.1_Heat51907_flange.pdf",
+  "doc_type": "mtc",
+  "pages": 1,
+  "size": 3487,
+  "needs_review": false,
+  "extraction": {
+   "certificates": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "certificate_no": "MTC-88413",
+     "heat_no": "51907",
+     "grade": "ASTM A105",
+     "product": "Forged WN flange 4in Cl.300",
+     "cert_type": "EN 10204 type 3.1"
+    }
+   ]
+  }
+ },
+ {
+  "filename": "MTC_3.1_Heat60231_fittings.pdf",
+  "doc_type": "mtc",
+  "pages": 1,
+  "size": 3544,
+  "needs_review": false,
+  "extraction": {
+   "certificates": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "certificate_no": "MTC-88414",
+     "heat_no": "60231",
+     "grade": "ASTM A234 WPB",
+     "product": "Elbow 6in 90 LR SCH 80",
+     "cert_type": "EN 10204 type 3.1"
+    },
+    {
+     "page": 1,
+     "confidence": "high",
+     "certificate_no": "MTC-88414",
+     "heat_no": "60232",
+     "grade": "ASTM A234 WPB",
+     "product": "Reducer 6x4in SCH 80",
+     "cert_type": "EN 10204 type 3.1"
+    }
+   ]
+  }
+ },
+ {
+  "filename": "PWHT_118.pdf",
+  "doc_type": "prod",
+  "pages": 1,
+  "size": 2620,
+  "needs_review": false,
+  "extraction": {
+   "parts": [],
+   "pwht_records": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "weld_id": "W-04",
+     "temperature_c": 620.0
+    }
+   ]
+  }
+ },
+ {
+  "filename": "RT-2230_W-01.pdf",
+  "doc_type": "ndt",
+  "pages": 1,
+  "size": 2866,
+  "needs_review": false,
+  "extraction": {
+   "reports": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "report_no": "RT-2230",
+     "method": "RT",
+     "welds": [
+      "W01"
+     ],
+     "result": "accept",
+     "technician_level": "NDT Level II interpreter",
+     "signed": true
+    }
+   ]
+  }
+ },
+ {
+  "filename": "RT-2231_W-02.pdf",
+  "doc_type": "ndt",
+  "pages": 1,
+  "size": 2867,
+  "needs_review": false,
+  "extraction": {
+   "reports": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "report_no": "RT-2231",
+     "method": "RT",
+     "welds": [
+      "W-02"
+     ],
+     "result": "accept",
+     "technician_level": "NDT Level II interpreter",
+     "signed": true
+    }
+   ]
+  }
+ },
+ {
+  "filename": "RT-2232_W-03.pdf",
+  "doc_type": "ndt",
+  "pages": 1,
+  "size": 2868,
+  "needs_review": false,
+  "extraction": {
+   "reports": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "report_no": "RT-2232",
+     "method": "RT",
+     "welds": [
+      "W-03"
+     ],
+     "result": "accept",
+     "technician_level": "NDT Level II interpreter",
+     "signed": true
+    }
+   ]
+  }
+ },
+ {
+  "filename": "RT-2233_W-04.pdf",
+  "doc_type": "ndt",
+  "pages": 1,
+  "size": 2866,
+  "needs_review": false,
+  "extraction": {
+   "reports": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "report_no": "RT-2233",
+     "method": "RT",
+     "welds": [
+      "W-04"
+     ],
+     "result": "accept",
+     "technician_level": "NDT Level II interpreter",
+     "signed": true
+    }
+   ]
+  }
+ },
+ {
+  "filename": "Weld_log_spool04.xlsx",
+  "doc_type": "weld",
+  "pages": 1,
+  "size": 5391,
+  "needs_review": false,
+  "extraction": {
+   "welds": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "weld_id": "W-01",
+     "wps": "WPS-07",
+     "welder_id": "W-409",
+     "joint": "Pipe to pipe, butt",
+     "parts": [
+      "P1",
+      "P2"
+     ]
+    },
+    {
+     "page": 1,
+     "confidence": "high",
+     "weld_id": "W-02",
+     "wps": "WPS-07",
+     "welder_id": "W-409",
+     "joint": "Pipe to elbow, butt",
+     "parts": [
+      "P1",
+      "E1"
+     ]
+    },
+    {
+     "page": 1,
+     "confidence": "high",
+     "weld_id": "W-03",
+     "wps": "WPS-07",
+     "welder_id": "W-512",
+     "joint": "Elbow to pipe, butt",
+     "parts": [
+      "E1",
+      "P2"
+     ]
+    },
+    {
+     "page": 1,
+     "confidence": "high",
+     "weld_id": "W-04",
+     "wps": "WPS-07",
+     "welder_id": "W-512",
+     "joint": "Reducer to WN flange, butt",
+     "parts": [
+      "R1",
+      "F1"
+     ]
+    }
+   ],
+   "procedures": [],
+   "qualifications": []
+  }
+ },
+ {
+  "filename": "WPQ_W-409.pdf",
+  "doc_type": "weld",
+  "pages": 1,
+  "size": 2663,
+  "needs_review": false,
+  "extraction": {
+   "welds": [],
+   "procedures": [],
+   "qualifications": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "welder_id": "W-409",
+     "processes": [
+      "GTAW",
+      "SMAW"
+     ],
+     "valid_until": "2027-03-12"
+    }
+   ]
+  }
+ },
+ {
+  "filename": "WPQ_W-512.pdf",
+  "doc_type": "weld",
+  "pages": 1,
+  "size": 2666,
+  "needs_review": false,
+  "extraction": {
+   "welds": [],
+   "procedures": [],
+   "qualifications": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "welder_id": "W-512",
+     "processes": [
+      "GTAW",
+      "SMAW"
+     ],
+     "valid_until": "2027-05-30"
+    }
+   ]
+  }
+ },
+ {
+  "filename": "WPS-07_GTAW-SMAW.pdf",
+  "doc_type": "weld",
+  "pages": 1,
+  "size": 2831,
+  "needs_review": false,
+  "extraction": {
+   "welds": [],
+   "procedures": [
+    {
+     "page": 1,
+     "confidence": "high",
+     "wps_id": "WPS-07",
+     "pwht_required": false,
+     "pwht_temperature_c": 620.0
+    }
+   ],
+   "qualifications": []
+  }
+ }
+]

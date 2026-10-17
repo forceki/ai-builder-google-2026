@@ -46,6 +46,23 @@ const nodes = computed(() => {
 })
 const nodeByKey = computed(() => Object.fromEntries(Object.values(nodes.value).map((n) => [n.item.key, n])))
 
+const pathLinks = computed(() => {
+  const start = nodeByKey.value[sel.value]?.item.id
+  const on = new Set()
+  if (!start) return on
+  const walk = (id, from, to) => {
+    for (const [i, l] of ws.value.links.entries()) {
+      if (l[from] === id && !on.has(i)) {
+        on.add(i)
+        walk(l[to], from, to)
+      }
+    }
+  }
+  walk(start, 'to_item_id', 'from_item_id')
+  walk(start, 'from_item_id', 'to_item_id')
+  return on
+})
+
 const edges = computed(() =>
   ws.value.links
     .map((l, i) => {
@@ -56,11 +73,34 @@ const edges = computed(() =>
       const y1 = a.y + NH / 2
       const x2 = b.x - 3
       const y2 = b.y + NH / 2
-      const mx = Math.round(x1 + (x2 - x1) / 2)
-      const on = sel.value === a.item.key || sel.value === b.item.key
+      const bend = (x2 - x1) * 0.45
+      const d = `M${x1} ${y1} C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`
+      const on = pathLinks.value.has(i)
+      const dim = !!sel.value && !on
       return l.kind === 'conflict'
-        ? { key: i, conflict: true, d: `M${x1} ${y1} H${mx} V${y2} H${x2}`, on, label: { x: mx, y: Math.min(y1, y2) - 8 } }
-        : { key: i, d: `M${x1} ${y1} H${mx} V${y2} H${x2}`, on, delay: a.col * 0.22 }
+        ? { key: i, conflict: true, d, on, dim, label: { x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 8 } }
+        : { key: i, d, on, dim, delay: a.col * 0.22 }
+    })
+    .filter(Boolean),
+)
+
+const TAGS = {
+  'R-MAT-01': (f) => (f.message.startsWith('No heat number') ? 'NO HEAT NO.' : 'NO MTC'),
+  'R-MAT-02': () => '≠ HEAT NO.',
+  'R-WLD-01': (f) => (f.message.includes('has no WPS') ? 'NO WPS' : 'WPS NOT IN DOSSIER'),
+  'R-WLD-02': (f) => (f.message.includes('no welder') ? 'NO WELDER' : 'WELDER NOT QUALIFIED'),
+  'R-WLD-03': () => 'NO PART LINK',
+  'R-NDT-04': () => 'NDT REJECTED',
+  'R-DOS-02': () => 'NO PWHT RECORD',
+  'R-DOS-04': () => 'NOT SIGNED',
+}
+const tags = computed(() =>
+  Object.values(nodes.value)
+    .map((n) => {
+      const fs = findingsFor(n.item.key).filter((f) => TAGS[f.rule_id])
+      if (!fs.length) return null
+      const text = [...new Set(fs.map((f) => TAGS[f.rule_id](f)))].join(' · ')
+      return { key: n.item.key, x: n.x, y: n.y + NH + 4, text, reject: fs.some((f) => f.status === 'REJECT') }
     })
     .filter(Boolean),
 )
@@ -138,7 +178,7 @@ defineExpose({ fit, focusNode, findFirst })
     >
       <div class="relative m-3" :style="{ width: `${Math.round(CW * zoom)}px`, height: `${Math.round(CH * zoom)}px` }">
         <div
-          class="absolute top-0 left-0 origin-top-left border border-ink bg-white bg-[linear-gradient(rgb(17_17_17/0.06)_1px,transparent_1px),linear-gradient(90deg,rgb(17_17_17/0.06)_1px,transparent_1px)] bg-size-[20px_20px]"
+          class="absolute top-0 left-0 origin-top-left border border-ink bg-white bg-[linear-gradient(rgb(var(--shade)/0.06)_1px,transparent_1px),linear-gradient(90deg,rgb(var(--shade)/0.06)_1px,transparent_1px)] bg-size-[20px_20px]"
           :style="{ width: `${CW}px`, height: `${CH}px`, transform: `scale(${zoom})` }"
         >
           <div
@@ -152,48 +192,46 @@ defineExpose({ fit, focusNode, findFirst })
           <svg :width="CW" :height="CH" :viewBox="`0 0 ${CW} ${CH}`" aria-hidden="true" class="pointer-events-none absolute top-0 left-0 overflow-visible font-mono">
             <defs>
               <marker id="hmArrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-                <path d="M0 0 L8 4 L0 8 Z" fill="#111111" />
+                <path d="M0 0 L8 4 L0 8 Z" class="fill-ink"/>
               </marker>
             </defs>
             <template v-for="e in edges" :key="e.key">
               <template v-if="e.conflict">
-                <path :d="e.d" fill="none" stroke="#C4271B" :stroke-width="e.on ? 2.5 : 1.5" stroke-dasharray="6 4" style="animation: hm-fade 0.6s 0.3s ease-out both" />
-                <text :x="e.label.x" :y="e.label.y" text-anchor="middle" font-size="10" font-weight="700" fill="#C4271B" style="animation: hm-fade 0.6s 0.4s both">≠ HEAT NO.</text>
+                <path :d="e.d" fill="none" :stroke-width="e.on ? 2.5 : 1.5" :stroke-opacity="e.dim ? 0.35 : 1" stroke-dasharray="6 4" style="animation: hm-fade 0.6s 0.3s ease-out both" class="stroke-reject"/>
+                <text :x="e.label.x" :y="e.label.y" text-anchor="middle" font-size="10" font-weight="700" style="animation: hm-fade 0.6s 0.4s both" class="fill-reject">≠ HEAT NO.</text>
               </template>
               <path
                 v-else
                 :d="e.d"
                 fill="none"
-                stroke="#111111"
+               
                 :stroke-width="e.on ? 2 : 1"
-                :stroke-opacity="e.on ? 1 : 0.55"
+                :stroke-opacity="e.on ? 1 : e.dim ? 0.18 : 0.55"
                 pathLength="1"
                 stroke-dasharray="1"
                 marker-end="url(#hmArrow)"
-                :style="{ animation: `hm-draw 0.8s ${e.delay}s ease-out both` }"
-              />
+                :style="{ animation: `hm-draw 0.8s ${e.delay}s ease-out both` }" class="stroke-ink"/>
             </template>
 
             <template v-for="m in missingNdt" :key="m.key">
               <path
                 :d="`M${COLX[2] + NW} ${m.y} H${COLX[3] - 2}`"
                 fill="none"
-                stroke="#FF4F00"
+               
                 :stroke-width="sel === m.key ? 2.5 : 2"
                 stroke-dasharray="6 4"
-                style="animation: hm-fade 0.5s 0.6s both"
-              />
+                style="animation: hm-fade 0.5s 0.6s both" class="stroke-signal"/>
               <g
                 class="pointer-events-auto cursor-pointer"
                 style="transform-box: fill-box; transform-origin: center; animation: hm-stamp 0.28s 0.9s ease-out both"
                 @click="select(m.key)"
               >
                 <g :transform="`rotate(-5 ${COLX[3] + 48} ${m.y})`">
-                  <rect :x="COLX[3]" :y="m.y - 17" width="96" height="34" fill="#FF4F00" stroke="#111111" stroke-width="1.5" />
-                  <rect :x="COLX[3] + 4" :y="m.y - 13" width="88" height="26" fill="none" stroke="#111111" stroke-width="0.8" />
-                  <text :x="COLX[3] + 48" :y="m.y + 6" text-anchor="middle" font-size="16" font-weight="700" letter-spacing="2" fill="#111111">HOLD</text>
+                  <rect :x="COLX[3]" :y="m.y - 17" width="96" height="34" stroke-width="1.5" class="fill-signal stroke-ink"/>
+                  <rect :x="COLX[3] + 4" :y="m.y - 13" width="88" height="26" fill="none" stroke-width="0.8" class="stroke-ink"/>
+                  <text :x="COLX[3] + 48" :y="m.y + 6" text-anchor="middle" font-size="16" font-weight="700" letter-spacing="2" class="fill-ink">HOLD</text>
                 </g>
-                <text :x="COLX[3]" :y="m.y + 34" font-size="10" fill="#111111">NO NDT RECORD FOR {{ m.key }}</text>
+                <text :x="COLX[3]" :y="m.y + 34" font-size="10" class="fill-ink">NO NDT RECORD FOR {{ m.key }}</text>
               </g>
             </template>
           </svg>
@@ -216,8 +254,35 @@ defineExpose({ fit, focusNode, findFirst })
             </span>
             <span aria-hidden="true" class="size-[9px] flex-none border border-ink" :class="LED[statusOf(n.item.key)]"></span>
           </button>
+
+          <span
+            v-for="t in tags"
+            :key="`tag-${t.key}`"
+            aria-hidden="true"
+            class="pointer-events-none absolute max-w-[170px] truncate border px-1.5 py-px font-mono text-[9.5px] font-bold tracking-[0.04em] [animation:hm-fade_.4s_.5s_ease-out_both]"
+            :class="t.reject ? 'border-reject bg-white text-reject' : 'border-ink bg-signal text-ink'"
+            :style="{ left: `${t.x}px`, top: `${t.y}px` }"
+          >{{ t.text }}</span>
         </div>
       </div>
+    </div>
+
+    <div
+      aria-label="Map legend"
+      class="pointer-events-none absolute right-5 bottom-7 flex flex-col gap-1 border border-ink bg-white/95 px-2.5 py-2 font-mono text-[9.5px] tracking-[0.04em]"
+    >
+      <span class="flex items-center gap-2"><span class="size-[9px] border border-ink" :class="LED.PASS"></span>VERIFIED</span>
+      <span class="flex items-center gap-2"><span class="size-[9px] border border-ink" :class="LED.HOLD"></span>ISSUE · HOLD</span>
+      <span class="flex items-center gap-2"><span class="size-[9px] border border-ink" :class="LED.REJECT"></span>REJECT</span>
+      <span class="flex items-center gap-2">
+        <svg width="18" height="6" aria-hidden="true"><path d="M0 3 H18" stroke-width="1.5" class="stroke-ink"/></svg>LINKED BY DOCUMENTS
+      </span>
+      <span class="flex items-center gap-2">
+        <svg width="18" height="6" aria-hidden="true"><path d="M0 3 H18" stroke-width="1.5" stroke-dasharray="4 3" class="stroke-reject"/></svg>VALUES CONFLICT
+      </span>
+      <span class="flex items-center gap-2">
+        <svg width="18" height="6" aria-hidden="true"><path d="M0 3 H18" stroke-width="2" stroke-dasharray="4 3" class="stroke-signal"/></svg>RECORD MISSING
+      </span>
     </div>
     <span aria-hidden="true" class="pointer-events-none absolute bottom-1.5 left-2 font-mono text-[9.5px] text-faint">⌖ X000 Y000</span>
     <span aria-hidden="true" class="pointer-events-none absolute right-2 bottom-1.5 font-mono text-[9.5px] text-faint">

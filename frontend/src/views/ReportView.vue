@@ -40,7 +40,7 @@ const meta = computed(() => [
   { label: 'PROJECT NO.', value: projectNo.value },
   { label: 'REPORT NO.', value: reportNo.value },
   { label: 'DATE', value: when(run.value?.finished_at) },
-  { label: 'INSPECTOR', value: 'R. LINDQVIST · QE' },
+  { label: 'INSPECTOR', value: (store.state.auth.user?.name ?? '—').toUpperCase() },
   { label: 'RULE SET', value: run.value?.rule_set ?? '—' },
   { label: 'SCOPE', value: r.value.project?.scope ?? '—' },
 ])
@@ -98,7 +98,13 @@ const decisionLabel = (key) => DECISIONS.value.find((d) => d.key === key)?.label
 const signature = computed(() => r.value.signature)
 const decision = ref('hold')
 const comment = ref('')
-const name = ref('R. Lindqvist')
+const name = ref(store.state.auth.user?.name ?? '')
+watch(
+  () => store.state.auth.user?.name,
+  (n) => {
+    if (n && !name.value) name.value = n
+  },
+)
 const reviewed = ref(false)
 const signing = ref(false)
 const signError = ref('')
@@ -129,7 +135,7 @@ const h2 = 'm-0 font-mono text-xs tracking-[0.08em]'
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col bg-paper font-sans text-ink print:bg-white">
+  <div class="flex min-h-screen flex-col bg-paper font-sans text-ink print:block print:min-h-0 print:bg-white">
     <AppBar data-noprint class="sticky top-0 z-[5]" :avatar="false">
       <template #title>
         <Breadcrumb :items="crumbs" class="flex-[1_1_220px]" />
@@ -236,8 +242,8 @@ const h2 = 'm-0 font-mono text-xs tracking-[0.08em]'
                   <span class="font-mono text-[13px] font-bold">{{ f.item_key }}</span>
                   <span class="text-base font-bold">{{ checkName[f.check_id] }}</span>
                 </span>
-                <span class="text-[14.5px] leading-[1.45]">{{ f.explanation || f.message }}</span>
-                <span v-if="f.next_step" class="text-sm leading-[1.45]">
+                <span class="font-read text-[15px] leading-[1.6]">{{ f.explanation || f.message }}</span>
+                <span v-if="f.next_step" class="font-read text-[14px] leading-[1.55]">
                   <span class="font-mono text-[11px] font-bold tracking-[0.06em]">NEXT STEP · </span>{{ f.next_step }}
                 </span>
                 <span class="font-mono text-[11px] text-muted">
@@ -286,7 +292,7 @@ const h2 = 'm-0 font-mono text-xs tracking-[0.08em]'
         <section aria-labelledby="sig-h" class="flex flex-col gap-4 px-[clamp(20px,4vw,40px)] pt-6 pb-8">
           <h2 id="sig-h" :class="h2">05 / ENGINEER SIGN-OFF</h2>
 
-          <form v-if="!signature" class="flex flex-col gap-4" @submit.prevent="sign">
+          <form v-if="!signature || !signature.current" class="flex flex-col gap-4" @submit.prevent="sign">
             <fieldset class="m-0 flex flex-col gap-2 border-0 p-0">
               <legend class="pb-2 font-mono text-[11px] tracking-[0.08em] text-muted">DECISION</legend>
               <label
@@ -343,24 +349,33 @@ const h2 = 'm-0 font-mono text-xs tracking-[0.08em]'
             </div>
           </form>
 
-          <div v-else class="flex flex-wrap items-center gap-6 border border-ink p-5">
+          <p v-if="signature && !signature.current" role="note" class="m-0 border-l-2 border-signal pl-3 font-read text-[14px] leading-snug">
+            The documents changed after the sign-off below, so it no longer covers this dossier. It stays on record.
+            Review the current result and sign again above.
+          </p>
+          <div
+            v-if="signature"
+            class="flex flex-wrap items-center gap-6 border p-5"
+            :class="signature.current ? 'border-ink' : 'border-dashed border-ink/50 opacity-75'"
+          >
             <span
-              class="inline-block -rotate-6 border-[3px] border-ink px-4 py-2 font-mono text-xl font-bold tracking-[0.16em] outline outline-offset-[3px] outline-ink [animation:hm-stamp_.3s_ease-out_both]"
-            >SIGNED</span>
+              class="inline-block -rotate-6 border-[3px] px-4 py-2 font-mono text-xl font-bold tracking-[0.16em] outline outline-offset-[3px] [animation:hm-stamp_.3s_ease-out_both]"
+              :class="signature.current ? 'border-ink outline-ink' : 'border-signal text-signal outline-signal'"
+            >{{ signature.current ? 'SIGNED' : 'OUTDATED' }}</span>
             <dl class="m-0 grid flex-[1_1_280px] grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-1.5 font-mono text-[12.5px]">
               <dt class="text-muted">DECISION</dt><dd class="m-0 font-bold">{{ decisionLabel(signature.decision) }}</dd>
               <dt class="text-muted">SIGNED BY</dt><dd class="m-0 font-bold">{{ signature.name }} · QUALITY ENGINEER</dd>
               <dt class="text-muted">DATE</dt><dd class="m-0">{{ when(signature.signed_at) }}</dd>
               <dt class="text-muted">COMMENT</dt><dd class="m-0 font-sans text-sm leading-[1.4]">{{ signature.comment || '—' }}</dd>
             </dl>
-            <div data-noprint class="flex flex-col items-start gap-1.5">
+            <div v-if="signature.current" data-noprint class="flex flex-col items-start gap-1.5">
               <button type="button" :disabled="signing" class="btn-hard bg-white px-3 py-2 text-[11.5px]" @click="revoke">Revoke signature</button>
               <span v-if="signError" class="font-mono text-[11px] text-reject">{{ signError }}</span>
             </div>
           </div>
         </section>
 
-        <div class="flex flex-wrap justify-between gap-2 border-t-2 border-ink px-[clamp(20px,4vw,40px)] py-2.5 font-mono text-[10.5px] tracking-[0.06em] text-muted">
+        <div class="flex flex-wrap justify-between gap-2 border-t-2 border-ink px-[clamp(20px,4vw,40px)] py-2.5 font-mono text-[10.5px] tracking-[0.06em] text-muted print:break-before-avoid">
           <span>HEATMARK · {{ reportNo }} · REV. A</span><span>SHEET 1 OF 1</span><span>POWERED BY SHOYUPURO</span>
         </div>
       </article>

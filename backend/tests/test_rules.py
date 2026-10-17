@@ -1,7 +1,7 @@
 from app.pipeline.mapper import build_graph
 from app.rules import dossier_completeness, material_traceability, ndt_evidence, run_all, weld_linkage
 from app.rules.types import Status
-from app.schemas.production import ProductionRecords, PwhtEntry
+from app.schemas.production import FitUpEntry, ProductionRecords, PwhtEntry
 from app.models.document import DocType
 from app.pipeline.mapper import Extracted
 from app.schemas.ndt import NdtReports
@@ -54,6 +54,24 @@ def test_ndt_evidence_rejects_rejected_report():
 def test_dossier_completeness_flags_pwht_and_signature():
     findings = keyed(dossier_completeness.run(build_graph(specimen())))
     assert findings == {("R-DOS-02", "W-22", Status.HOLD), ("R-DOS-04", "RT-0019", Status.HOLD)}
+
+
+def test_pwht_limited_to_listed_welds():
+    docs = specimen()
+    docs[3].data.procedures[1].pwht_welds = ["W-17"]
+    findings = keyed(dossier_completeness.run(build_graph(docs)))
+    assert ("R-DOS-02", "W-22", Status.HOLD) not in findings
+
+
+def test_fitup_links_welds_to_parts():
+    docs = specimen()
+    docs[3].data.welds[0].parts = []
+    docs.append(Extracted("Fitup.pdf", DocType.PRODUCTION, ProductionRecords(
+        parts=[], pwht_records=[], fitups=[FitUpEntry(page=1, confidence="high", weld_id="W11", parts=["P101"])],
+    )))
+    graph = build_graph(docs)
+    assert graph.welds["W-11"].parts == ["P-101"]
+    assert weld_linkage.run(graph) == []
 
 
 def test_evidence_clears_findings():

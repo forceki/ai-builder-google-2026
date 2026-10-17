@@ -21,7 +21,7 @@ const checks = computed(() => store.state.report.checks)
         v-for="c in checks"
         :key="c.id"
         data-reveal
-        class="relative flex flex-col gap-3.5 rounded border border-ink/15 bg-panel p-6 shadow-[inset_0_-3px_0_rgb(17_17_17/0.08)]"
+        class="relative flex flex-col gap-3.5 rounded border border-ink/15 bg-panel p-6 shadow-[inset_0_-3px_0_rgb(var(--shade)/0.08)]"
       >
         <div class="flex items-center justify-between font-mono text-[11px] tracking-[0.08em] text-muted">
           <span>CHECK {{ c.id }}</span>

@@ -11,6 +11,6 @@ defineProps({
   <div class="flex items-center gap-3 font-mono text-xs tracking-[0.08em]">
     <span class="font-bold">{{ num }}</span>
     <span class="h-px w-8" :class="inverted ? 'bg-paper' : 'bg-ink'"></span>
-    <span :id="labelId" :class="inverted ? 'text-[#ADADAD]' : 'text-muted'">{{ label }}</span>
+    <span :id="labelId" :class="inverted ? 'text-paper/65' : 'text-muted'">{{ label }}</span>
   </div>
 </template>

@@ -14,8 +14,9 @@ SYSTEM = """You sort quality documents from steel fabrication projects into one 
 - mtc: material / mill test certificates (heat numbers, grades, EN 10204 3.1)
 - weld: weld logs, WPS, PQR, welder qualifications
 - ndt: non-destructive testing reports or registers (UT, RT, MT, PT, VT)
-- insp: inspection and test plans (ITP), dimensional reports, hydro test reports
-- prod: travelers, fabrication records, PWHT records or registers
+- insp: inspection and test plans (ITP), dimensional reports, hydro test reports, spool / isometric drawings
+  with a weld map or NDT notes
+- prod: travelers, fabrication records, fit-up records, PWHT records or registers, dossier indexes
 Pick the single best type from the document content, not only the file name."""
 
 
@@ -43,6 +44,7 @@ def guess_from_filename(filename: str) -> DocType | None:
 async def classify(parts: list[types.Part]) -> Classification:
     s = get_settings()
     return await generate(
+        purpose="classify",
         model=s.fast_model,
         system=SYSTEM,
         parts=[*parts, types.Part.from_text(text="Classify this document.")],

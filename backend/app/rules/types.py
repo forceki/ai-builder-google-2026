@@ -67,6 +67,10 @@ class Procedure:
     wps_id: str
     pwht_required: bool
     source: Source
+    pwht_welds: frozenset[str] = frozenset()
+
+    def requires_pwht(self, weld_id: str) -> bool:
+        return self.pwht_required and (not self.pwht_welds or weld_id in self.pwht_welds)
 
 
 @dataclass

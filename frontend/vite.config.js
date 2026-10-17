@@ -6,6 +6,6 @@ export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {
     // Backend API (backend/: uvicorn app.main:app --port 8000)
-    proxy: { '/api': 'http://localhost:8000' },
+    proxy: { '/api': { target: 'http://localhost:8000', ws: true } },
   },
 })

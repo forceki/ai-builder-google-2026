@@ -11,10 +11,34 @@ class Out(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class LoginIn(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class UserOut(Out):
+    id: uuid.UUID
+    email: str
+    name: str
+    role: str
+
+
+class LoginOut(BaseModel):
+    token: str
+    token_type: Literal["Bearer"] = "Bearer"
+    expires_in: int = Field(description="Seconds until the token expires")
+    user: UserOut
+
+
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     scope: str = "NOT SCOPED"
     no: str | None = Field(default=None, description="Project number; generated (PRJ-<year>-<seq>) if omitted")
+
+
+class ProjectUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    scope: str | None = Field(default=None, max_length=200)
 
 
 class ProjectOut(Out):
@@ -26,6 +50,7 @@ class ProjectOut(Out):
     docs: int
     checks: dict[str, int] | None = Field(description="{pass, hold, reject} from the last completed run, or null")
     release: Literal["NO DOCUMENTS", "EXTRACTING", "NOT READY", "READY · SIGN-OFF", "RELEASED"]
+    signoff: "SignoffOut | None" = None
     updated_at: datetime
 
 
@@ -41,10 +66,16 @@ class DocumentOut(Out):
     status: str
     error: str | None
     created_at: datetime
+    updated_at: datetime
 
 
 class DocumentDetail(DocumentOut):
     extraction: dict[str, Any] | None
+
+
+class DocumentLinkOut(BaseModel):
+    url: str = Field(description="Temporary signed link to the original file; works without a token until it expires")
+    expires_at: datetime
 
 
 class DocumentTypeUpdate(BaseModel):
@@ -94,6 +125,42 @@ class TraceMapOut(BaseModel):
     links: list[TraceLinkOut]
 
 
+class AiLogOut(Out):
+    id: uuid.UUID
+    created_at: datetime
+    purpose: str
+    model: str
+    project_id: uuid.UUID | None
+    document_id: uuid.UUID | None
+    item_key: str | None
+    status: str
+    error: str | None
+    duration_ms: int
+    input_tokens: int | None
+    output_tokens: int | None
+    thinking_tokens: int | None
+    cached_tokens: int | None
+    total_tokens: int | None
+
+
+class AiUsageRow(BaseModel):
+    model: str
+    purpose: str
+    calls: int
+    errors: int
+    input_tokens: int
+    output_tokens: int
+    thinking_tokens: int
+    total_tokens: int
+    avg_duration_ms: int
+
+
+class AiUsageOut(BaseModel):
+    calls: int
+    total_tokens: int
+    by_model: list[AiUsageRow] = Field(description="Totals per model and purpose")
+
+
 class SignoffIn(BaseModel):
     decision: Literal["hold", "concession", "release"]
     name: str = Field(min_length=1, max_length=120)
@@ -109,3 +176,7 @@ class SignoffOut(Out):
     comment: str
     signed_at: datetime
     revoked_at: datetime | None
+    current: bool = Field(default=True, description="False once the documents changed after signing")
+
+
+ProjectOut.model_rebuild()

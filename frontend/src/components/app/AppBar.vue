@@ -1,10 +1,23 @@
 <script setup>
+import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useStore } from 'vuex'
 import ThemeToggle from '../ui/ThemeToggle.vue'
 
 defineProps({
   title: { type: String, default: '' },
   avatar: { type: Boolean, default: true },
 })
+
+const store = useStore()
+const router = useRouter()
+const user = computed(() => store.state.auth.user)
+const initials = computed(() => store.getters['auth/initials'] || '··')
+
+const signOut = () => {
+  store.dispatch('auth/signOut')
+  router.push({ name: 'login' })
+}
 </script>
 
 <template>
@@ -20,11 +33,17 @@ defineProps({
       <slot name="status" />
       <ThemeToggle />
       <slot name="actions" />
-      <span
-        v-if="avatar"
-        title="R. Lindqvist, Quality Engineer"
-        class="flex size-8 items-center justify-center bg-ink font-mono text-xs font-bold text-paper"
-      >RL</span>
+      <template v-if="avatar">
+        <span
+          :title="user ? `${user.name}, ${user.role} (${user.email})` : ''"
+          class="flex size-8 items-center justify-center bg-ink font-mono text-xs font-bold text-paper"
+        >{{ initials }}</span>
+        <button
+          type="button"
+          class="btn-hard bg-white px-2.5 py-1.5 text-[11px] tracking-[0.06em] uppercase"
+          @click="signOut"
+        >Sign out</button>
+      </template>
     </div>
   </header>
 </template>

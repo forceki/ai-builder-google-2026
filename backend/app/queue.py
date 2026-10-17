@@ -6,6 +6,7 @@ from arq.connections import ArqRedis, RedisSettings
 from app.config import get_settings
 
 PROCESS_DOCUMENT = "process_document"
+SETTLE_CHECKS = "settle_checks"
 RUN_CHECKS = "run_checks"
 
 

@@ -17,6 +17,16 @@ class PwhtEntry(Entry):
     temperature_c: float | None
 
 
+class FitUpEntry(Entry):
+    weld_id: str = Field(description="Weld / joint number, e.g. W-01")
+    parts: list[str] = Field(
+        description="Part numbers / piece marks the weld joins (e.g. Component A and B), not heat numbers"
+    )
+
+
 class ProductionRecords(BaseModel):
     parts: list[PartEntry]
     pwht_records: list[PwhtEntry]
+    fitups: list[FitUpEntry] = Field(
+        default_factory=list, description="Fit-up rows: which parts each weld joins, where the record lists it"
+    )

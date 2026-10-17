@@ -1,6 +1,7 @@
 <script setup>
 import { computed, inject, nextTick, ref, watch } from 'vue'
 import { useStore } from 'vuex'
+import { useOpenFile } from '../../composables/useOpenFile'
 import { EVIDENCE_GROUP, KIND_LABEL, itemSub } from '../../data/workspace'
 import { clockTime } from '../../lib/status'
 import PanelHeader from './PanelHeader.vue'
@@ -8,12 +9,16 @@ import RuleStamp from '../ui/RuleStamp.vue'
 
 const store = useStore()
 const openUpload = inject('openUpload')
+const { openFile, error: openError } = useOpenFile()
 
 const ws = computed(() => store.state.workspace)
+const docByName = computed(() => Object.fromEntries(ws.value.docs.map((d) => [d.filename, d])))
+const openSource = (s) => openFile(ws.value.projectNo, docByName.value[s.document], s.page)
 const phase = computed(() => store.getters['workspace/phase'])
 const item = computed(() => (phase.value === 'review' && ws.value.sel ? store.getters['workspace/itemByKey'][ws.value.sel] : null))
 const status = computed(() => item.value && store.getters['workspace/statusOf'](item.value.key))
 const findings = computed(() => (item.value ? store.getters['workspace/findingsFor'](item.value.key) : []))
+const explaining = computed(() => store.getters['workspace/explaining'])
 
 const previewIdx = ref(0)
 const noting = ref(false)
@@ -104,14 +109,22 @@ defineExpose({ focusTitle: () => title.value?.focus() })
         <div class="grid grid-cols-[108px_minmax(0,1fr)] gap-x-3 px-[18px] py-[9px]">
           <dt class="pt-0.5 font-mono text-[10.5px] tracking-[0.05em] text-faint">SOURCES</dt>
           <dd class="m-0 flex flex-col items-start gap-1">
-            <button
-              v-for="(s, i) in sources"
-              :key="`${s.document}-${s.page}-${i}`"
-              type="button"
-              class="cursor-pointer border-0 bg-transparent p-0 text-left font-mono text-[10.5px] underline underline-offset-2"
-              :class="{ 'font-bold': i === previewIdx }"
-              @click="previewIdx = i"
-            >↳ {{ s.document }}{{ s.page ? ` · p.${s.page}` : '' }}</button>
+            <span v-for="(s, i) in sources" :key="`${s.document}-${s.page}-${i}`" class="flex flex-wrap items-center gap-x-2">
+              <button
+                type="button"
+                class="cursor-pointer border-0 bg-transparent p-0 text-left font-mono text-[10.5px] underline underline-offset-2"
+                :class="{ 'font-bold': i === previewIdx }"
+                @click="previewIdx = i"
+              >↳ {{ s.document }}{{ s.page ? ` · p.${s.page}` : '' }}</button>
+              <button
+                v-if="docByName[s.document]"
+                type="button"
+                :aria-label="`Open ${s.document}${s.page ? ` at page ${s.page}` : ''}`"
+                class="cursor-pointer border border-ink/30 bg-white px-1 py-px font-mono text-[9px] font-bold text-muted hover:border-ink hover:text-ink"
+                @click="openSource(s)"
+              >OPEN ↗</button>
+            </span>
+            <span v-if="openError" role="alert" class="font-mono text-[10px] text-reject">{{ openError }}</span>
           </dd>
         </div>
       </dl>
@@ -126,11 +139,11 @@ defineExpose({ focusTitle: () => title.value?.focus() })
       >
         <span class="absolute top-3.5 left-3.5 h-[7px] w-[38%] bg-ink"></span>
         <span class="absolute top-3.5 right-3.5 h-[7px] w-[16%] bg-pending"></span>
-        <span class="absolute top-8 left-3.5 h-1 w-[60%] bg-[#E0E0E0]"></span>
+        <span class="absolute top-8 left-3.5 h-1 w-[60%] bg-ink/10"></span>
         <span class="absolute inset-x-3.5 top-[50px] h-px bg-ink"></span>
         <template v-for="(row, r) in [[28, 34], [24, 30], [30, 26], [22, 36], [26, 22]]" :key="r">
-          <span class="absolute left-3.5 h-1 bg-[#E0E0E0]" :style="{ top: `${62 + r * 22}px`, width: `${row[0]}%` }"></span>
-          <span class="absolute left-[46%] h-1 bg-[#E0E0E0]" :style="{ top: `${62 + r * 22}px`, width: `${row[1]}%` }"></span>
+          <span class="absolute left-3.5 h-1 bg-ink/10" :style="{ top: `${62 + r * 22}px`, width: `${row[0]}%` }"></span>
+          <span class="absolute left-[46%] h-1 bg-ink/10" :style="{ top: `${62 + r * 22}px`, width: `${row[1]}%` }"></span>
         </template>
         <span class="absolute inset-x-3.5 bottom-[18px] h-px bg-pending"></span>
         <span
@@ -141,25 +154,28 @@ defineExpose({ focusTitle: () => title.value?.focus() })
           <span class="text-faint">{{ preview.field.label }}</span><span class="truncate font-bold">{{ preview.field.value }}</span>
         </span>
       </div>
-      <p class="m-0 px-[18px] pt-1.5 font-mono text-[9.5px] text-faint">Layout preview. Page images are not stored yet.</p>
+      <p class="m-0 px-[18px] pt-1.5 font-mono text-[9.5px] text-faint">Layout preview. Use OPEN ↗ next to a source to see the original page.</p>
 
       <div class="mt-4 flex flex-col gap-2.5 border-t border-ink px-[18px] py-3.5">
-        <div class="flex items-center justify-between gap-2 font-mono text-[10.5px] tracking-[0.08em]">
-          <span class="font-bold">FINDING — EXPLANATION</span><span class="text-faint">GENERATED · FOR REVIEW</span>
+        <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 font-mono text-[10.5px] tracking-[0.08em]">
+          <span class="font-bold whitespace-nowrap">FINDING — EXPLANATION</span><span class="whitespace-nowrap text-faint">GENERATED · FOR REVIEW</span>
         </div>
         <template v-if="findings.length">
           <div v-for="f in findings" :key="f.id" class="flex flex-col gap-2.5">
-            <p class="m-0 text-[14.5px] leading-[1.45]">{{ f.explanation || f.message }}</p>
+            <p class="m-0 font-read text-[15px] leading-[1.6] text-ink">{{ f.explanation || f.message }}</p>
+            <span v-if="!f.explanation && explaining" class="flex items-center gap-2 font-mono text-[10.5px] text-muted">
+              <span aria-hidden="true" class="size-1.5 animate-blink bg-signal"></span>Writing a plain-language explanation…
+            </span>
             <div v-if="f.next_step" class="flex flex-col gap-1 border border-ink bg-white px-3 py-2.5">
               <span class="font-mono text-[10px] tracking-[0.08em] text-faint">SUGGESTED NEXT STEP</span>
-              <span class="text-sm leading-[1.4]">{{ f.next_step }}</span>
+              <span class="font-read text-[14px] leading-[1.55]">{{ f.next_step }}</span>
             </div>
             <span class="font-mono text-[10px] text-faint">
               {{ f.rule_id }} · SRC: {{ f.sources.map((s) => `${s.document}${s.page ? ` p.${s.page}` : ''}`).join(' / ') }}
             </span>
           </div>
         </template>
-        <p v-else class="m-0 text-[14.5px] leading-[1.45]">No findings for this item on the last run.</p>
+        <p v-else class="m-0 font-read text-[15px] leading-[1.6]">No findings for this item on the last run.</p>
 
         <div class="flex flex-wrap gap-1.5 pt-1">
           <button type="button" :class="actionBtn" class="border-b-black bg-ink text-paper" @click="attach">ATTACH EVIDENCE</button>

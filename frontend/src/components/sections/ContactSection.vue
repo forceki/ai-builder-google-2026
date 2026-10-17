@@ -16,7 +16,7 @@ const onSubmit = () => store.dispatch('demo/request', email.value)
     <h2 id="con-h" class="m-0 text-[clamp(56px,11vw,168px)] leading-[0.88] font-extrabold tracking-[-0.05em]">Ship with evidence.</h2>
 
     <form
-      class="relative flex w-full max-w-[680px] flex-col gap-[18px] self-end rounded border border-ink/15 bg-panel px-[clamp(18px,3vw,32px)] py-7 shadow-[inset_0_-3px_0_rgb(17_17_17/0.08)]"
+      class="relative flex w-full max-w-[680px] flex-col gap-[18px] self-end rounded border border-ink/15 bg-panel px-[clamp(18px,3vw,32px)] py-7 shadow-[inset_0_-3px_0_rgb(var(--shade)/0.08)]"
       @submit.prevent="onSubmit"
     >
       <div class="flex justify-between gap-3 font-mono text-[11px] tracking-[0.08em] text-muted">

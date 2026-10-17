@@ -6,9 +6,12 @@ Default Credentials (`gcloud auth application-default login`, or the runtime's i
 
 import asyncio
 import uuid
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 
+import google.auth.credentials
+import google.auth.transport.requests
 from google.cloud import storage as gcs
 
 from app.config import get_settings
@@ -35,6 +38,36 @@ async def get(bucket: str, key: str) -> bytes:
         return await asyncio.to_thread(_local_path(bucket, key).read_bytes)
     blob = _gcs().bucket(bucket).blob(key)
     return await asyncio.to_thread(blob.download_as_bytes)
+
+
+async def signed_url(bucket: str, key: str, *, filename: str, content_type: str, minutes: int) -> str | None:
+    if get_settings().storage_backend == "local":
+        return None
+    return await asyncio.to_thread(_sign, bucket, key, filename, content_type, minutes)
+
+
+def _sign(bucket: str, key: str, filename: str, content_type: str, minutes: int) -> str:
+    client = _gcs()
+    safe_name = filename.replace('"', "").replace("\\", "")
+    kwargs = {}
+    creds = client._credentials
+    if not isinstance(creds, google.auth.credentials.Signing):
+        creds.refresh(google.auth.transport.requests.Request())
+        kwargs = {"service_account_email": creds.service_account_email, "access_token": creds.token}
+    return client.bucket(bucket).blob(key).generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=minutes),
+        method="GET",
+        response_type=content_type,
+        response_disposition=f'inline; filename="{safe_name}"',
+        **kwargs,
+    )
+
+
+async def exists(bucket: str, key: str) -> bool:
+    if get_settings().storage_backend == "local":
+        return _local_path(bucket, key).is_file()
+    return await asyncio.to_thread(_gcs().bucket(bucket).blob(key).exists)
 
 
 @lru_cache

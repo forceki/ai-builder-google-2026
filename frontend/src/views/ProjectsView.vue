@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import AppBar from '../components/app/AppBar.vue'
 import AppFooter from '../components/app/AppFooter.vue'
+import ConfirmDialog from '../components/app/ConfirmDialog.vue'
+import ProjectDialog from '../components/app/ProjectDialog.vue'
 import { RELEASE, STAGES, projectGroup } from '../store/modules/projects'
 
 const store = useStore()
@@ -15,7 +17,8 @@ const q = ref('')
 const projects = computed(() => store.state.projects.list)
 const loading = computed(() => store.state.projects.loading)
 const error = computed(() => store.state.projects.error)
-const creating = ref(false)
+const dialog = ref(null)
+const deleting = ref(null)
 
 onMounted(() => store.dispatch('projects/fetchAll'))
 const countBy = (k) => store.getters['projects/countBy'](k)
@@ -57,21 +60,15 @@ const segClass = (p, i) =>
 const workspaceLink = (p) => `/projects/${p.no}`
 const open = (p) => router.push(workspaceLink(p))
 const onRowClick = (e, p) => {
-  if (e.target.closest('a')) return
+  if (e.target.closest('a, button')) return
   open(p)
 }
 
-const newProject = async () => {
-  creating.value = true
-  try {
-    await store.dispatch('projects/create')
-    filter.value = 'all'
-    q.value = ''
-  } catch (e) {
-    store.commit('projects/setError', e.message)
-  } finally {
-    creating.value = false
-  }
+const newProject = () => (dialog.value = { project: null })
+const renameProject = (p) => (dialog.value = { project: p })
+const onSaved = () => {
+  filter.value = 'all'
+  q.value = ''
 }
 </script>
 
@@ -81,7 +78,6 @@ const newProject = async () => {
       <template #actions>
         <button
           type="button"
-          :disabled="creating"
           class="btn-hard flex items-center gap-2 bg-signal px-3.5 py-2 text-xs tracking-[0.06em] uppercase"
           @click="newProject"
         >
@@ -149,7 +145,23 @@ const newProject = async () => {
             >
               <td class="px-4 py-3.5">
                 <span class="flex flex-col gap-1">
-                  <RouterLink :to="workspaceLink(p)" class="text-base font-bold no-underline hover:underline">{{ p.name }}</RouterLink>
+                  <span class="flex items-center gap-2">
+                    <RouterLink :to="workspaceLink(p)" class="text-base font-bold no-underline hover:underline">{{ p.name }}</RouterLink>
+                    <button
+                      type="button"
+                      :aria-label="`Rename ${p.no}`"
+                      title="Rename"
+                      class="cursor-pointer border border-ink/30 bg-white px-1.5 py-px font-mono text-[10px] tracking-[0.06em] text-muted hover:border-ink hover:text-ink"
+                      @click="renameProject(p)"
+                    >RENAME</button>
+                    <button
+                      type="button"
+                      :aria-label="`Delete ${p.no}`"
+                      title="Delete"
+                      class="cursor-pointer border border-ink/30 bg-white px-1.5 py-px font-mono text-[10px] tracking-[0.06em] text-muted hover:border-reject hover:text-reject"
+                      @click="deleting = p"
+                    >DELETE</button>
+                  </span>
                   <span class="font-mono text-[11.5px] text-muted">{{ p.no }} · {{ p.scope }}</span>
                 </span>
               </td>
@@ -197,5 +209,20 @@ const newProject = async () => {
     </main>
 
     <AppFooter />
+
+    <ProjectDialog v-if="dialog" :project="dialog.project" @saved="onSaved" @close="dialog = null" />
+    <ConfirmDialog
+      v-if="deleting"
+      :title="`DELETE ${deleting.no}`"
+      confirm-label="Delete project"
+      :action="() => store.dispatch('projects/remove', deleting.no)"
+      @close="deleting = null"
+    >
+      <p class="m-0">Delete <b>{{ deleting.name }}</b> ({{ deleting.no }})?</p>
+      <p class="m-0">
+        This removes its {{ deleting.docs }} {{ deleting.docs === 1 ? 'document' : 'documents' }}, the map, all check results
+        and sign-offs from Heatmark. This can't be undone. The original files stay in cloud storage.
+      </p>
+    </ConfirmDialog>
   </div>
 </template>

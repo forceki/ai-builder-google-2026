@@ -1,11 +1,28 @@
 <script setup>
 import { computed, inject, ref } from 'vue'
 import { useStore } from 'vuex'
-import { GROUPS, docStatusLabel, guess } from '../../data/workspace'
+import { useOpenFile } from '../../composables/useOpenFile'
+import ConfirmDialog from '../app/ConfirmDialog.vue'
+import KebabMenu from '../ui/KebabMenu.vue'
+import { GROUPS, docStatusLabel } from '../../data/workspace'
 import PanelHeader from './PanelHeader.vue'
 
 const store = useStore()
 const openUpload = inject('openUpload')
+const { openFile, error: openError } = useOpenFile()
+const deleting = ref(null)
+const busyDoc = (d) => d.status === 'queued' || d.status === 'reading'
+const docActions = (d) => [
+  { label: 'Open file', icon: 'open', action: () => openFile(ws.value.projectNo, d) },
+  {
+    label: 'Delete',
+    icon: 'trash',
+    danger: true,
+    disabled: busyDoc(d),
+    title: busyDoc(d) ? 'Wait until the file has been read' : undefined,
+    action: () => (deleting.value = d),
+  },
+]
 
 const ws = computed(() => store.state.workspace)
 const phase = computed(() => store.getters['workspace/phase'])
@@ -55,8 +72,8 @@ const pickDoc = (d) => {
 
 const onDrop = (e) => {
   dragOver.value = false
-  const f = e.dataTransfer?.files?.[0]
-  openUpload(f ? { file: f, group: guess(f.name) } : undefined)
+  const files = [...(e.dataTransfer?.files ?? [])]
+  openUpload(files.length ? { files } : undefined)
 }
 
 const latest = computed(() => {
@@ -110,6 +127,7 @@ const corners = [
           @click="filter = f.key"
         >{{ f.label }}</button>
       </div>
+      <p v-if="openError" role="alert" class="m-0 border-b border-ink px-3.5 py-2 font-mono text-[10.5px] text-reject">{{ openError }}</p>
       <div class="min-h-0 flex-1 overflow-auto">
         <div v-for="g in groups" :key="g.key" class="border-b border-ink">
           <button
@@ -123,12 +141,11 @@ const corners = [
             <span class="text-faint">({{ g.count }})</span>
           </button>
           <ul v-if="g.open" class="m-0 list-none p-0 pb-1.5">
-            <li v-for="d in g.docs" :key="d.id">
+            <li v-for="d in g.docs" :key="d.id" class="flex items-start" :class="linked(d) ? 'bg-white outline-2 -outline-offset-2 outline-signal' : ''">
               <button
                 type="button"
                 :title="d.error || undefined"
-                class="flex w-full cursor-pointer flex-col gap-[5px] py-[7px] pr-3.5 pl-8 text-left -outline-offset-2 hover:bg-paper"
-                :class="linked(d) ? 'bg-white outline-2 outline-signal' : 'bg-transparent'"
+                class="flex min-w-0 flex-1 cursor-pointer flex-col gap-[5px] bg-transparent py-[7px] pr-2 pl-8 text-left hover:bg-paper"
                 @click="pickDoc(d)"
               >
                 <span class="flex w-full items-center gap-2">
@@ -144,10 +161,11 @@ const corners = [
                   <template v-if="d.evidence_for"> · FOR {{ d.evidence_for }}</template>
                 </span>
                 <span v-if="d.status === 'failed' && d.error" class="line-clamp-2 font-mono text-[9.5px] text-reject">{{ d.error }}</span>
-                <span v-if="d.status === 'reading'" aria-hidden="true" class="relative block h-[3px] w-full overflow-hidden bg-[#E0E0E0]">
+                <span v-if="d.status === 'reading'" aria-hidden="true" class="relative block h-[3px] w-full overflow-hidden bg-ink/10">
                   <span class="absolute inset-y-0 w-[30%] bg-ink [animation:hm-bar_1s_linear_infinite]"></span>
                 </span>
               </button>
+              <KebabMenu class="mt-[5px] mr-2.5 flex-none" :label="`Actions for ${d.filename}`" :items="docActions(d)" />
             </li>
             <li v-if="!g.docs.length" class="pt-1 pr-3.5 pb-1.5 pl-8 font-mono text-[10.5px] text-faint">NO MATCHING FILES</li>
           </ul>
@@ -158,5 +176,22 @@ const corners = [
     <ul v-else class="m-0 flex list-none flex-col gap-2 p-3.5 font-mono text-[10.5px] tracking-[0.04em] text-faint">
       <li v-for="[key, label] in GROUPS" :key="key">{{ label }} (0)</li>
     </ul>
+
+    <ConfirmDialog
+      v-if="deleting"
+      :title="`DELETE ${deleting.filename}`"
+      confirm-label="Delete file"
+      :action="() => store.dispatch('workspace/deleteDoc', deleting)"
+      @close="deleting = null"
+    >
+      <p class="m-0">
+        This removes <b>{{ deleting.filename }}</b> and everything read from it
+        <template v-if="docItems(deleting).length">({{ docItems(deleting).length }} {{ docItems(deleting).length === 1 ? 'item' : 'items' }} on the map use it)</template>.
+      </p>
+      <p class="m-0">The map is rebuilt and the checks run again without it. The original file stays in cloud storage.</p>
+      <p v-if="ws.project?.signoff?.current" class="m-0 border-l-2 border-signal pl-2.5">
+        <b>This project is signed.</b> Deleting a document makes the signature outdated, and the report has to be signed again.
+      </p>
+    </ConfirmDialog>
   </aside>
 </template>

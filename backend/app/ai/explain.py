@@ -30,6 +30,7 @@ async def explain(finding: RuleFinding, context: str = "") -> Explanation:
         + (f"Related records:\n{context}\n" if context else "")
     )
     return await generate(
+        purpose="explain",
         model=s.fast_model,
         system=SYSTEM,
         parts=[types.Part.from_text(text=prompt)],

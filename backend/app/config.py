@@ -25,8 +25,14 @@ class Settings(BaseSettings):
     documents_bucket: str = "heatmark-documents"
     storage_dir: Path = Path("./var/storage")
     max_upload_mb: int = 50
+    signed_url_minutes: int = 15
 
     cors_origins: list[str] = ["http://localhost:5173"]
+
+    jwt_secret: SecretStr
+    jwt_ttl_hours: int = 12
+    demo_email: str = "demo@heatmark.app"
+    demo_password: SecretStr = SecretStr("heatmark-demo")
 
     # Gemini (google-genai). Key from GEMINI_API_KEY in the environment or .env.
     gemini_api_key: SecretStr | None = Field(default=None, validation_alias="GEMINI_API_KEY")
@@ -40,6 +46,14 @@ class Settings(BaseSettings):
     max_output_tokens: int = 32768
 
     rule_set: str = "RS-2.1"
+    checks_debounce_seconds: int = 15
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _long_enough(cls, v: SecretStr) -> SecretStr:
+        if len(v.get_secret_value()) < 32:
+            raise ValueError("HEATMARK_JWT_SECRET must be at least 32 characters")
+        return v
 
     @field_validator("gcp_project", "gcs_credentials_file", "gemini_api_key", mode="before")
     @classmethod

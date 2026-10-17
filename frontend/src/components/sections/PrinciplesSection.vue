@@ -16,7 +16,7 @@ const principles = [
         <div v-for="p in principles" :key="p.title" data-reveal class="flex flex-col gap-[18px]">
           <span aria-hidden="true" class="size-2.5 rounded-full bg-signal"></span>
           <h3 class="m-0 text-[clamp(28px,3vw,40px)] leading-none font-extrabold tracking-[-0.03em]">{{ p.title }}</h3>
-          <p class="m-0 text-[17px] leading-[1.45] text-[#D6D6D6]">{{ p.text }}</p>
+          <p class="m-0 text-[17px] leading-[1.45] text-paper/85">{{ p.text }}</p>
         </div>
       </div>
     </div>

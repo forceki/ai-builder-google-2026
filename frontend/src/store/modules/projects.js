@@ -74,8 +74,17 @@ export default {
       commit('upsert', row)
       return row
     },
-    async create({ commit }) {
-      const row = toRow(await api.projects.create({ name: 'Untitled project' }))
+    async create({ commit }, data) {
+      const row = toRow(await api.projects.create(data))
+      commit('upsert', row)
+      return row
+    },
+    async remove({ state, commit }, no) {
+      await api.projects.remove(no)
+      commit('setList', state.list.filter((p) => p.no !== no))
+    },
+    async update({ commit }, { no, ...data }) {
+      const row = toRow(await api.projects.update(no, data))
       commit('upsert', row)
       return row
     },

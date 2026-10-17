@@ -49,6 +49,20 @@ export default {
         throw e
       }
     },
+    async signInGoogle({ commit }, credential) {
+      commit('setError', null)
+      commit('setPhase', { phase: 'busy', via: 'google' })
+      try {
+        const res = await api.auth.google(credential)
+        session.setToken(res.token)
+        commit('setUser', res.user)
+        commit('setPhase', { phase: 'done' })
+      } catch (e) {
+        commit('setPhase', { phase: 'idle' })
+        commit('setError', `Google sign-in failed: ${e.message}`)
+        throw e
+      }
+    },
     signInDemo({ dispatch }) {
       return dispatch('signIn', { email: DEMO_EMAIL, password: DEMO_PASSWORD, via: 'demo' })
     },
@@ -62,6 +76,7 @@ export default {
     },
     signOut({ commit }) {
       commit('signedOut')
+      commit('projects/setList', [], { root: true })
     },
   },
 }

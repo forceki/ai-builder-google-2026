@@ -6,7 +6,7 @@ from litestar.di import Provide
 
 from app import queue
 from app.api import AiLogController, AuthController, CheckController, DocumentController, ProjectController
-from app.api.deps import provide_db, provide_queue
+from app.api.deps import provide_db, provide_queue, provide_user
 from app.api.events import project_events
 from app.auth import jwt_auth
 from app.config import get_settings
@@ -38,7 +38,7 @@ app = Litestar(
         project_events,
     ],
     on_app_init=[jwt_auth.on_app_init],
-    dependencies={"db": Provide(provide_db), "queue": Provide(provide_queue)},
+    dependencies={"db": Provide(provide_db), "queue": Provide(provide_queue), "user": Provide(provide_user)},
     on_startup=[on_startup],
     on_shutdown=[on_shutdown],
     cors_config=CORSConfig(allow_origins=get_settings().cors_origins),

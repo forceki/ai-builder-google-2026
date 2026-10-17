@@ -19,7 +19,7 @@ from app.ai.inputs import UnreadableFile, page_count
 from app.api.deps import get_project
 from app.config import get_settings
 from app.events import publish
-from app.models import CheckRun, Document
+from app.models import CheckRun, Document, User
 from app.models._common import utcnow
 from app.models.document import DocStatus, DocType
 from app.queue import PROCESS_DOCUMENT, RUN_CHECKS
@@ -39,8 +39,8 @@ class DocumentController(Controller):
     path = "/api/projects/{project_no:str}/documents"
 
     @get("/")
-    async def list_documents(self, db: AsyncSession, project_no: str) -> list[DocumentOut]:
-        project = await get_project(db, project_no)
+    async def list_documents(self, db: AsyncSession, user: User, project_no: str) -> list[DocumentOut]:
+        project = await get_project(db, project_no, user)
         docs = await db.scalars(
             select(Document).where(Document.project_id == project.id).order_by(Document.created_at)
         )
@@ -49,13 +49,13 @@ class DocumentController(Controller):
     @post("/")
     async def upload(
         self,
-        db: AsyncSession,
+        db: AsyncSession, user: User,
         queue: ArqRedis,
         project_no: str,
         data: Annotated[UploadForm, Body(media_type=RequestEncodingType.MULTI_PART)],
     ) -> DocumentOut:
         settings = get_settings()
-        project = await get_project(db, project_no)
+        project = await get_project(db, project_no, user)
         filename = data.file.filename or "upload"
         suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
         if suffix not in ALLOWED:
@@ -123,7 +123,7 @@ class DocumentController(Controller):
 
     @patch("/{document_id:uuid}")
     async def set_type(
-        self, db: AsyncSession, queue: ArqRedis, project_no: str, document_id: uuid.UUID, data: DocumentTypeUpdate
+        self, db: AsyncSession, user: User, queue: ArqRedis, project_no: str, document_id: uuid.UUID, data: DocumentTypeUpdate
     ) -> DocumentOut:
         """Correct the document type and read the document again with the right schema."""
         doc = await self._get(db, project_no, document_id)
@@ -136,7 +136,7 @@ class DocumentController(Controller):
         return DocumentOut.model_validate(doc)
 
     async def _get(self, db: AsyncSession, project_no: str, document_id: uuid.UUID) -> Document:
-        project = await get_project(db, project_no)
+        project = await get_project(db, project_no, user)
         doc = await db.get(Document, document_id)
         if doc is None or doc.project_id != project.id:
             raise NotFoundException("document not found")

@@ -13,6 +13,13 @@
   --color-pass: #1f6b3a;
   --color-reject: #c4271b;
 
+  --color-cat-mtc: #2563eb;
+  --color-cat-weld: #7c3aed;
+  --color-cat-ndt: #0e8f86;
+  --color-cat-insp: #c0269f;
+  --color-cat-prod: #a8680f;
+  --color-cat-none: #6e6e6e;
+
   --font-sans: 'Archivo', Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   --font-read: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
@@ -39,6 +46,12 @@
     --color-faint: #8c8c8c;
     --color-pass: #4cc274;
     --color-reject: #ff5c50;
+    --color-cat-mtc: #6b9bff;
+    --color-cat-weld: #a98bff;
+    --color-cat-ndt: #3cc7bc;
+    --color-cat-insp: #f06ad2;
+    --color-cat-prod: #e0a84a;
+    --color-cat-none: #8c8c8c;
   }
   @media print {
     html[data-hm-theme='dark'] {
@@ -56,6 +69,12 @@
       --color-faint: #6e6e6e;
       --color-pass: #1f6b3a;
       --color-reject: #c4271b;
+      --color-cat-mtc: #2563eb;
+      --color-cat-weld: #7c3aed;
+      --color-cat-ndt: #0e8f86;
+      --color-cat-insp: #c0269f;
+      --color-cat-prod: #a8680f;
+      --color-cat-none: #6e6e6e;
     }
   }
   @media (prefers-reduced-motion: reduce) {

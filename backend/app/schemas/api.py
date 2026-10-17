@@ -16,6 +16,10 @@ class LoginIn(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+class GoogleLoginIn(BaseModel):
+    credential: str = Field(min_length=20, max_length=4096, description="ID token from Google Identity Services")
+
+
 class UserOut(Out):
     id: uuid.UUID
     email: str

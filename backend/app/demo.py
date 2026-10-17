@@ -3,13 +3,13 @@ import asyncio
 import json
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import storage
 from app.auth import upsert_user
 from app.config import get_settings
-from app.db import create_tables, make_engine, make_sessionmaker
+from app.db import make_engine, make_sessionmaker
 from app.models import CheckRun, Document, Project, Signoff
 from app.models.document import DocStatus
 from app.pipeline.run import execute_run
@@ -32,7 +32,10 @@ SIGNER = "Demo QA inspector"
 
 async def load(session: AsyncSession, *, reset: bool = False, explain: bool = True) -> list[str]:
     s = get_settings()
-    await upsert_user(session, s.demo_email, "Demo inspector", s.demo_password.get_secret_value(), "Demo account")
+    demo_user = await upsert_user(
+        session, s.demo_email, "Demo inspector", s.demo_password.get_secret_value(), "Demo account"
+    )
+    await session.execute(update(Project).where(Project.owner_id.is_(None)).values(owner_id=demo_user.id))
     await session.commit()
 
     created = []
@@ -44,7 +47,7 @@ async def load(session: AsyncSession, *, reset: bool = False, explain: bool = Tr
             await session.execute(delete(Project).where(Project.id == existing.id))
             await session.commit()
 
-        project = Project(no=no, name=name, scope=scope)
+        project = Project(no=no, name=name, scope=scope, owner_id=demo_user.id)
         session.add(project)
         await session.flush()
         for doc in json.loads((DATA / f"{dossier}.json").read_text(encoding="utf-8")):
@@ -76,7 +79,6 @@ async def load(session: AsyncSession, *, reset: bool = False, explain: bool = Tr
 
 async def _main(reset: bool, explain: bool) -> None:
     engine = make_engine()
-    await create_tables(engine)
     async with make_sessionmaker(engine)() as session:
         created = await load(session, reset=reset, explain=explain)
     await engine.dispose()

@@ -58,6 +58,7 @@ const p = (no) => `/projects/${encodeURIComponent(no)}`
 export const api = {
   auth: {
     login: (email, password) => request('POST', '/auth/login', { json: { email, password } }),
+    google: (credential) => request('POST', '/auth/google', { json: { credential } }),
     me: () => request('GET', '/auth/me'),
   },
   projects: {

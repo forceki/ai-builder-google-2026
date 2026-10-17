@@ -13,8 +13,8 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://heatmark:heatmark@localhost:5433/heatmark"
     redis_url: str = "redis://localhost:6380/0"
-    # Create tables on API startup. Fine for development; use migrations in production.
-    auto_create_tables: bool = True
+    # Create tables on API startup instead of running migrations (`alembic upgrade head`). Throwaway databases only.
+    auto_create_tables: bool = False
 
     # Uploaded documents. "gcs" = Google Cloud Storage (Application Default Credentials);
     # "local" = storage_dir/<bucket>/<key>, for tests and offline work.
@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     jwt_ttl_hours: int = 12
     demo_email: str = "demo@heatmark.app"
     demo_password: SecretStr = SecretStr("heatmark-demo")
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    google_allowed_domains: list[str] = []
 
     # Gemini (google-genai). Key from GEMINI_API_KEY in the environment or .env.
     gemini_api_key: SecretStr | None = Field(default=None, validation_alias="GEMINI_API_KEY")
@@ -55,7 +58,10 @@ class Settings(BaseSettings):
             raise ValueError("HEATMARK_JWT_SECRET must be at least 32 characters")
         return v
 
-    @field_validator("gcp_project", "gcs_credentials_file", "gemini_api_key", mode="before")
+    @field_validator(
+        "gcp_project", "gcs_credentials_file", "gemini_api_key", "google_client_id", "google_client_secret",
+        mode="before",
+    )
     @classmethod
     def _blank_is_unset(cls, v):
         return None if isinstance(v, str) and not v.strip() else v

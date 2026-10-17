@@ -1,7 +1,8 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
+import { GOOGLE_CLIENT_ID, loadGoogleIdentity } from '../lib/google'
 import { DEMO_EMAIL, DEMO_PASSWORD } from '../store/modules/auth'
 import BrandMark from '../components/ui/BrandMark.vue'
 import ThemeToggle from '../components/ui/ThemeToggle.vue'
@@ -17,9 +18,6 @@ const busy = computed(() => store.getters['auth/busy'])
 const signedIn = computed(() => store.getters['auth/signedIn'])
 
 const statusText = computed(() => ({ idle: 'READY', busy: 'CONNECTING…', done: 'AUTHENTICATED' }[phase.value]))
-
-const email = ref('')
-const password = ref('')
 
 const demoLabel = computed(() =>
   busy.value && store.state.auth.via === 'demo' ? 'Signing in to the demo…' : 'Try the demo',
@@ -41,13 +39,47 @@ const signIn = async (credentials) => {
   router.push(next.value)
 }
 
-const onGoogle = () => store.commit('auth/setError', 'Google sign-in is not set up yet. Use email, or try the demo.')
-const onEmail = () => signIn({ email: email.value, password: password.value, via: 'email' })
-const onDemo = () => {
-  email.value = DEMO_EMAIL
-  password.value = DEMO_PASSWORD
-  return signIn({ email: DEMO_EMAIL, password: DEMO_PASSWORD, via: 'demo' })
+const googleBtn = ref(null)
+const googleError = ref('')
+
+const onGoogleCredential = async ({ credential }) => {
+  try {
+    await store.dispatch('auth/signInGoogle', credential)
+  } catch {
+    return
+  }
+  router.push(next.value)
 }
+
+async function renderGoogle() {
+  if (!GOOGLE_CLIENT_ID || signedIn.value) return
+  try {
+    const gid = await loadGoogleIdentity()
+    gid.initialize({ client_id: GOOGLE_CLIENT_ID, callback: onGoogleCredential, ux_mode: 'popup', auto_select: false })
+    await nextTick()
+    const el = googleBtn.value
+    if (!el) return
+    el.innerHTML = ''
+    gid.renderButton(el, {
+      type: 'standard',
+      theme: store.state.theme.dark ? 'filled_black' : 'outline',
+      size: 'large',
+      text: 'continue_with',
+      shape: 'rectangular',
+      logo_alignment: 'center',
+      width: Math.min(400, el.clientWidth || 360),
+    })
+    googleError.value = ''
+  } catch (e) {
+    googleError.value = e.message
+  }
+}
+
+onMounted(renderGoogle)
+watch(signedIn, (v) => !v && renderGoogle())
+watch(() => store.state.theme.dark, renderGoogle)
+
+const onDemo = () => signIn({ email: DEMO_EMAIL, password: DEMO_PASSWORD, via: 'demo' })
 const onSignOut = () => store.dispatch('auth/signOut')
 </script>
 
@@ -70,9 +102,8 @@ const onSignOut = () => store.dispatch('auth/signOut')
         <p class="m-0 max-w-[420px] text-lg leading-[1.45]">Sign in to review open findings and sign off releases.</p>
       </div>
 
-      <form
+      <div
         class="relative box-border flex max-w-[520px] min-w-0 flex-[1_1_400px] flex-col gap-5 rounded border border-ink/18 bg-panel px-[clamp(20px,4vw,40px)] py-[clamp(28px,4vw,40px)] shadow-[inset_0_-3px_0_rgb(var(--shade)/0.1)]"
-        @submit.prevent="onEmail"
       >
         <PanelBolts />
 
@@ -102,50 +133,17 @@ const onSignOut = () => store.dispatch('auth/signOut')
         </div>
 
         <template v-else>
-          <button
-            type="button"
-            :disabled="busy"
-            class="flex w-full cursor-pointer items-center justify-center gap-3.5 rounded border border-ink bg-white px-5 py-4 font-mono text-sm font-bold tracking-[0.04em] text-ink shadow-[inset_0_-4px_0_rgb(var(--shade)/0.14)] active:translate-y-[3px] active:shadow-[inset_0_-1px_0_rgb(var(--shade)/0.14)] disabled:cursor-wait"
-            @click="onGoogle"
-          >
-            <span
-              aria-hidden="true"
-              class="flex size-[22px] flex-none items-center justify-center rounded-full border border-ink/35 bg-white font-sans text-[13px] font-extrabold"
-            >G</span>
-            Continue with Google
-          </button>
-
-          <div aria-hidden="true" class="flex items-center gap-3.5 font-mono text-[11px] tracking-[0.08em] text-muted">
-            <span class="h-px flex-1 bg-ink/30"></span>OR WITH EMAIL<span class="h-px flex-1 bg-ink/30"></span>
-          </div>
-
-          <label class="flex flex-col gap-2">
-            <span class="font-mono text-[11px] text-muted">WORK EMAIL</span>
-            <input v-model="email" type="email" name="email" required autocomplete="email" placeholder="name@company.com" class="field" />
-          </label>
-          <label class="flex flex-col gap-2">
-            <span class="flex justify-between gap-3 font-mono text-[11px] text-muted">
-              <span>PASSWORD</span>
-              <a href="#" class="underline-offset-[3px]">Forgot?</a>
-            </span>
-            <input
-              v-model="password"
-              type="password"
-              name="password"
-              required
-              autocomplete="current-password"
-              placeholder="••••••••"
-              class="field"
-            />
-          </label>
+          <template v-if="GOOGLE_CLIENT_ID">
+            <div class="flex min-h-[44px] w-full justify-center" :class="{ 'pointer-events-none opacity-60': busy }">
+              <div ref="googleBtn" class="flex w-full max-w-[400px] justify-center"></div>
+            </div>
+            <p v-if="googleError" role="alert" class="m-0 font-mono text-xs text-reject">{{ googleError }}</p>
+            <p class="m-0 -mt-2 text-center font-mono text-[11px] text-muted">New here? Signing in with Google creates your account.</p>
+          </template>
 
           <p v-if="error" role="alert" class="m-0 border-l-2 border-reject pl-2.5 font-mono text-xs text-reject">{{ error }}</p>
 
-          <button type="submit" :disabled="busy" class="btn-primary w-full justify-center disabled:cursor-wait">
-            <span aria-hidden="true" class="size-[9px] rounded-full bg-ink"></span>Sign in
-          </button>
-
-          <div aria-hidden="true" class="flex items-center gap-3.5 font-mono text-[11px] tracking-[0.08em] text-muted">
+          <div v-if="GOOGLE_CLIENT_ID" aria-hidden="true" class="flex items-center gap-3.5 font-mono text-[11px] tracking-[0.08em] text-muted">
             <span class="h-px flex-1 bg-ink/30"></span>OR EXPLORE<span class="h-px flex-1 bg-ink/30"></span>
           </div>
 
@@ -168,12 +166,8 @@ const onSignOut = () => store.dispatch('auth/signOut')
             <RouterLink to="/terms" class="text-ink underline-offset-[3px]">Terms</RouterLink> and
             <RouterLink to="/privacy" class="text-ink underline-offset-[3px]">Privacy policy</RouterLink>.
           </p>
-          <p class="m-0 font-mono text-xs leading-relaxed text-muted">
-            No account?
-            <RouterLink :to="{ path: '/', hash: '#contact' }" class="text-ink underline-offset-[3px]">Request a demo</RouterLink>
-          </p>
         </template>
-      </form>
+      </div>
     </main>
 
     <footer class="border-t border-ink font-mono text-xs">

@@ -9,6 +9,8 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from litestar.connection import ASGIConnection
 from litestar.security.jwt import JWTAuth, Token
 from sqlalchemy import select
@@ -17,9 +19,46 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models import User
 
-PUBLIC = ["^/api/health$", "^/api/auth/login$", "^/api/projects/[^/]+/events$", "^/schema"]
+PUBLIC = ["^/api/health$", "^/api/auth/login$", "^/api/auth/google$", "^/api/projects/[^/]+/events$", "^/schema"]
+
+GOOGLE_ONLY = "google-only"
+_GOOGLE_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}
 
 _N, _R, _P = 2**14, 8, 1
+
+
+class GoogleSignInError(Exception):
+    def __init__(self, message: str, *, forbidden: bool = False) -> None:
+        super().__init__(message)
+        self.forbidden = forbidden
+
+
+def _verify_google_token(credential: str, client_id: str) -> dict[str, Any]:
+    return google_id_token.verify_oauth2_token(credential, google_requests.Request(), client_id, clock_skew_in_seconds=10)
+
+
+async def authenticate_google(session: AsyncSession, credential: str) -> User:
+    s = get_settings()
+    if not s.google_client_id:
+        raise GoogleSignInError("Google sign-in is not configured on the server")
+    try:
+        claims = await asyncio.to_thread(_verify_google_token, credential, s.google_client_id)
+    except ValueError as e:
+        raise GoogleSignInError("the Google sign-in could not be verified") from e
+    if claims.get("iss") not in _GOOGLE_ISSUERS or not claims.get("email") or not claims.get("email_verified"):
+        raise GoogleSignInError("this Google account has no verified email address")
+
+    email = claims["email"].strip().lower()
+    allowed = {d.strip().lower() for d in s.google_allowed_domains if d.strip()}
+    if allowed and email.rsplit("@", 1)[-1] not in allowed:
+        raise GoogleSignInError(f"{email} is not allowed to sign in to Heatmark", forbidden=True)
+
+    user = await session.scalar(select(User).where(User.email == email))
+    if user is None:
+        user = User(email=email, name=claims.get("name") or email.split("@")[0], password_hash=GOOGLE_ONLY)
+        session.add(user)
+        await session.flush()
+    return user
 
 
 def _b64(data: bytes) -> str:
@@ -90,10 +129,9 @@ jwt_auth = JWTAuth[User](
 
 
 async def _add_user(email: str, name: str, role: str | None, password: str) -> None:
-    from app.db import create_tables, make_engine, make_sessionmaker
+    from app.db import make_engine, make_sessionmaker
 
     engine = make_engine()
-    await create_tables(engine)
     async with make_sessionmaker(engine)() as session:
         user = await upsert_user(session, email, name, password, role)
         await session.commit()

@@ -1,12 +1,13 @@
 from datetime import UTC, datetime
 
 from litestar import Controller, delete, get, patch, post
+from litestar.exceptions import ClientException
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_project
-from app.models import CheckRun, Document, Project
+from app.models import CheckRun, Document, Project, User
 from app.models.check import RunStatus
 from app.models.document import DocStatus
 from app.schemas.api import ProjectCreate, ProjectOut, ProjectUpdate, SignoffOut
@@ -48,8 +49,10 @@ async def _project_out(db: AsyncSession, p: Project) -> ProjectOut:
     )
 
 
-async def _list_projects(db: AsyncSession) -> list[ProjectOut]:
-    projects = (await db.scalars(select(Project).order_by(Project.updated_at.desc()))).all()
+async def _list_projects(db: AsyncSession, user: User) -> list[ProjectOut]:
+    projects = (await db.scalars(
+        select(Project).where(Project.owner_id == user.id).order_by(Project.updated_at.desc())
+    )).all()
     return [await _project_out(db, p) for p in projects]
 
 
@@ -57,35 +60,37 @@ class ProjectController(Controller):
     path = "/api/projects"
 
     @get("/")
-    async def list_projects(self, db: AsyncSession) -> list[ProjectOut]:
-        return await _list_projects(db)
+    async def list_projects(self, db: AsyncSession, user: User) -> list[ProjectOut]:
+        return await _list_projects(db, user)
 
     @post("/")
-    async def create_project(self, db: AsyncSession, data: ProjectCreate) -> ProjectOut:
+    async def create_project(self, db: AsyncSession, user: User, data: ProjectCreate) -> ProjectOut:
         no = data.no
+        if no and await db.scalar(select(Project.id).where(Project.no == no)):
+            raise ClientException(f"project number {no} is already taken")
         if not no:
             prefix = f"PRJ-{datetime.now(UTC).year}-"
             taken = (await db.scalars(select(Project.no).where(Project.no.like(f"{prefix}%")))).all()
             last = max((int(n.removeprefix(prefix)) for n in taken if n.removeprefix(prefix).isdigit()), default=0)
             no = f"{prefix}{last + 1:03d}"
-        project = Project(no=no, name=data.name, scope=data.scope)
+        project = Project(no=no, name=data.name, scope=data.scope, owner_id=user.id)
         db.add(project)
         await db.flush()
         return await _project_out(db, project)
 
     @get("/{project_no:str}")
-    async def get_project(self, db: AsyncSession, project_no: str) -> ProjectOut:
-        return await _project_out(db, await get_project(db, project_no))
+    async def get_project(self, db: AsyncSession, user: User, project_no: str) -> ProjectOut:
+        return await _project_out(db, await get_project(db, project_no, user))
 
     @delete("/{project_no:str}")
-    async def delete_project(self, db: AsyncSession, project_no: str) -> None:
-        project = await get_project(db, project_no)
+    async def delete_project(self, db: AsyncSession, user: User, project_no: str) -> None:
+        project = await get_project(db, project_no, user)
         await db.execute(sa_delete(Project).where(Project.id == project.id))
         await db.commit()
 
     @patch("/{project_no:str}")
-    async def update_project(self, db: AsyncSession, project_no: str, data: ProjectUpdate) -> ProjectOut:
-        project = await get_project(db, project_no)
+    async def update_project(self, db: AsyncSession, user: User, project_no: str, data: ProjectUpdate) -> ProjectOut:
+        project = await get_project(db, project_no, user)
         if data.name is not None:
             project.name = data.name.strip()
         if data.scope is not None:

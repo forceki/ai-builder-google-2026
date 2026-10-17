@@ -29,7 +29,9 @@ async def project_events(socket: WebSocket, project_no: str) -> None:
 
     async with socket.app.state.sessionmaker() as session:
         user = await session.get(User, user_id)
-        project = await session.scalar(select(Project).where(Project.no == project_no))
+        project = await session.scalar(
+            select(Project).where(Project.no == project_no, Project.owner_id == user_id)
+        )
     if user is None or project is None:
         await socket.close(code=4404 if user else 4401, reason="not found" if user else "not signed in")
         return

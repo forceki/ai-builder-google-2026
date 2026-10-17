@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_project
 from app.config import get_settings
 from app.events import publish
-from app.models import CheckRun, Signoff, TraceItem, TraceLink
+from app.models import CheckRun, Signoff, TraceItem, TraceLink, User
 from app.models._common import utcnow
 from app.models.check import RunStatus
 from app.queue import RUN_CHECKS
@@ -30,8 +30,8 @@ class CheckController(Controller):
     path = "/api/projects/{project_no:str}"
 
     @post("/checks", status_code=HTTP_202_ACCEPTED)
-    async def run_checks(self, db: AsyncSession, queue: ArqRedis, project_no: str) -> CheckRunOut:
-        project = await get_project(db, project_no)
+    async def run_checks(self, db: AsyncSession, user: User, queue: ArqRedis, project_no: str) -> CheckRunOut:
+        project = await get_project(db, project_no, user)
         run = CheckRun(project_id=project.id, rule_set=get_settings().rule_set, findings=[])
         db.add(run)
         await db.commit()
@@ -40,17 +40,17 @@ class CheckController(Controller):
         return CheckRunOut.model_validate(run)
 
     @get("/checks/latest")
-    async def latest(self, db: AsyncSession, project_no: str, complete: bool = False) -> CheckRunOut:
+    async def latest(self, db: AsyncSession, user: User, project_no: str, complete: bool = False) -> CheckRunOut:
         """Latest run; with ?complete=true, the latest run that finished successfully."""
-        project = await get_project(db, project_no)
+        project = await get_project(db, project_no, user)
         run = await _latest_run(db, project.id, complete_only=complete)
         if run is None:
             raise NotFoundException("checks have not been run for this project")
         return CheckRunOut.model_validate(run)
 
     @get("/trace")
-    async def trace_map(self, db: AsyncSession, project_no: str) -> TraceMapOut:
-        project = await get_project(db, project_no)
+    async def trace_map(self, db: AsyncSession, user: User, project_no: str) -> TraceMapOut:
+        project = await get_project(db, project_no, user)
         items = await db.scalars(select(TraceItem).where(TraceItem.project_id == project.id))
         links = await db.scalars(select(TraceLink).where(TraceLink.project_id == project.id))
         return TraceMapOut(
@@ -59,14 +59,14 @@ class CheckController(Controller):
         )
 
     @get("/signoff")
-    async def get_signoff(self, db: AsyncSession, project_no: str) -> SignoffOut | None:
-        project = await get_project(db, project_no)
+    async def get_signoff(self, db: AsyncSession, user: User, project_no: str) -> SignoffOut | None:
+        project = await get_project(db, project_no, user)
         signoff, current = await active_signoff(db, project.id)
         return SignoffOut.model_validate(signoff).model_copy(update={"current": current}) if signoff else None
 
     @post("/signoff")
-    async def sign(self, db: AsyncSession, project_no: str, data: SignoffIn) -> SignoffOut:
-        project = await get_project(db, project_no)
+    async def sign(self, db: AsyncSession, user: User, project_no: str, data: SignoffIn) -> SignoffOut:
+        project = await get_project(db, project_no, user)
         if not data.reviewed:
             raise ClientException("confirm that the findings and their sources were reviewed")
         run = await _latest_run(db, project.id, complete_only=True)
@@ -90,8 +90,8 @@ class CheckController(Controller):
         return SignoffOut.model_validate(signoff).model_copy(update={"current": True})
 
     @delete("/signoff")
-    async def revoke(self, db: AsyncSession, project_no: str) -> None:
-        project = await get_project(db, project_no)
+    async def revoke(self, db: AsyncSession, user: User, project_no: str) -> None:
+        project = await get_project(db, project_no, user)
         signoff, _ = await active_signoff(db, project.id)
         if signoff is None:
             raise NotFoundException("no active signature")

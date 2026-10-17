@@ -1,0 +1,24 @@
+Database migrations (Alembic). Run every command from backend/.
+
+Apply all pending migrations (local, CI, production):
+    uv run alembic upgrade head
+
+After changing a model in app/models:
+    uv run alembic revision --autogenerate -m "short description"
+    review the new file in migrations/versions/, then commit it with the model change
+    uv run alembic upgrade head
+
+Useful:
+    uv run alembic current         which revision the database is on
+    uv run alembic history         all revisions
+    uv run alembic check           fails if the models changed without a migration
+    uv run alembic downgrade -1    undo the last migration
+    uv run alembic upgrade head --sql > upgrade.sql   SQL to review or hand to a DBA
+
+The database URL comes from HEATMARK_DATABASE_URL (or .env), the same as the app.
+The Docker image runs `alembic upgrade head` before starting the API. The worker never migrates.
+
+New empty database:      uv run alembic upgrade head
+Database created before migrations existed (tables already there, made by the old auto-create):
+    make sure `uv run alembic check` against it reports no differences, then
+    uv run alembic stamp 0176e29859fb

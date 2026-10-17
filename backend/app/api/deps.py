@@ -1,13 +1,15 @@
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from arq.connections import ArqRedis
+from litestar import Request
 from litestar.datastructures import State
 from litestar.exceptions import NotFoundException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import session_scope
-from app.models import Project
+from app.models import Project, User
 
 
 async def provide_db(state: State) -> AsyncGenerator[AsyncSession]:
@@ -19,8 +21,12 @@ async def provide_queue(state: State) -> ArqRedis:
     return state.queue
 
 
-async def get_project(db: AsyncSession, project_no: str) -> Project:
-    project = await db.scalar(select(Project).where(Project.no == project_no))
+async def provide_user(request: Request[User, Any, Any]) -> User:
+    return request.user
+
+
+async def get_project(db: AsyncSession, project_no: str, user: User) -> Project:
+    project = await db.scalar(select(Project).where(Project.no == project_no, Project.owner_id == user.id))
     if project is None:
         raise NotFoundException(f"project {project_no} not found")
     return project

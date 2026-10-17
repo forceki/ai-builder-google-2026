@@ -7,6 +7,7 @@ import './style.css'
 
 session.onUnauthorized(() => {
   store.commit('auth/signedOut')
+  store.commit('projects/setList', [])
   const here = router.currentRoute.value
   if (here.meta.requiresAuth) router.replace({ name: 'login', query: { next: here.fullPath } })
 })

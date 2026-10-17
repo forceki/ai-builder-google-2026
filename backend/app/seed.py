@@ -13,7 +13,7 @@ import asyncio
 from sqlalchemy import delete, select
 
 from app.config import get_settings
-from app.db import create_tables, make_engine, make_sessionmaker
+from app.db import make_engine, make_sessionmaker
 from app.models import CheckRun, Document, Project
 from app.models.document import DocStatus
 from app.pipeline.run import execute_run
@@ -32,7 +32,6 @@ def _pages(extraction: dict) -> int:
 
 async def seed(reset: bool, explain: bool) -> None:
     engine = make_engine()
-    await create_tables(engine)
     async with make_sessionmaker(engine)() as session:
         for no, name, scope, with_docs in PROJECTS:
             existing = await session.scalar(select(Project).where(Project.no == no))

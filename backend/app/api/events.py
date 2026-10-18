@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 import jwt
@@ -6,7 +7,7 @@ from litestar.exceptions import WebSocketDisconnect
 from sqlalchemy import select
 
 from app.config import get_settings
-from app.events import channel
+from app.events import subscribe
 from app.models import Project, User
 
 PROTOCOL = "hibanako"
@@ -36,20 +37,16 @@ async def project_events(socket: WebSocket, project_no: str) -> None:
         await socket.close(code=4404 if user else 4401, reason="not found" if user else "not signed in")
         return
 
-    pubsub = socket.app.state.queue.pubsub()
-    await pubsub.subscribe(channel(project.id))
-    await socket.accept(subprotocols=PROTOCOL)
-    try:
-        await socket.send_json({"event": "hello"})
-        while True:
-            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=PING_SECONDS)
-            if message is None:
-                await socket.send_json({"event": "ping"})
-                continue
-            data = message["data"]
-            await socket.send_text(data.decode() if isinstance(data, bytes) else data)
-    except (WebSocketDisconnect, RuntimeError, OSError):
-        pass
-    finally:
-        await pubsub.unsubscribe()
-        await pubsub.aclose()
+    with subscribe(project.id) as inbox:
+        await socket.accept(subprotocols=PROTOCOL)
+        try:
+            await socket.send_json({"event": "hello"})
+            while True:
+                try:
+                    message = await asyncio.wait_for(inbox.get(), PING_SECONDS)
+                except TimeoutError:
+                    await socket.send_json({"event": "ping"})
+                    continue
+                await socket.send_text(message)
+        except (WebSocketDisconnect, RuntimeError, OSError):
+            pass

@@ -16,6 +16,8 @@ from google.cloud import storage as gcs
 
 from app.config import get_settings
 
+CLOUD_PLATFORM = "https://www.googleapis.com/auth/cloud-platform"
+
 
 def new_key(project_no: str, filename: str) -> str:
     suffix = Path(filename).suffix.lower()
@@ -50,10 +52,11 @@ def _sign(bucket: str, key: str, filename: str, content_type: str, minutes: int)
     client = _gcs()
     safe_name = filename.replace('"', "").replace("\\", "")
     kwargs = {}
-    creds = client._credentials
-    if not isinstance(creds, google.auth.credentials.Signing):
-        creds.refresh(google.auth.transport.requests.Request())
-        kwargs = {"service_account_email": creds.service_account_email, "access_token": creds.token}
+    if not isinstance(client._credentials, google.auth.credentials.Signing):
+        signer = _signer()
+        if not signer.valid:
+            signer.refresh(google.auth.transport.requests.Request())
+        kwargs = {"service_account_email": signer.service_account_email, "access_token": signer.token}
     return client.bucket(bucket).blob(key).generate_signed_url(
         version="v4",
         expiration=timedelta(minutes=minutes),
@@ -76,6 +79,12 @@ def _gcs() -> gcs.Client:
     if s.gcs_credentials_file:
         return gcs.Client.from_service_account_json(str(s.gcs_credentials_file.expanduser()), project=s.gcp_project)
     return gcs.Client(project=s.gcp_project)
+
+
+@lru_cache
+def _signer() -> google.auth.credentials.Credentials:
+    creds, _ = google.auth.default(scopes=[CLOUD_PLATFORM])
+    return creds
 
 
 def _local_path(bucket: str, key: str) -> Path:

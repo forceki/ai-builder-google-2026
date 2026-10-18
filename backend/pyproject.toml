@@ -8,8 +8,6 @@ dependencies = [
     "litestar[standard]>=2.24,<3",
     "sqlalchemy[asyncio]>=2.0.40,<3",
     "asyncpg>=0.32",
-    "arq>=0.28",
-    "redis>=5",
     "pydantic>=2.14",
     "pydantic-settings>=2.16",
     "openpyxl>=3.1",
@@ -18,6 +16,7 @@ dependencies = [
     "pyjwt>=2.10",
     "google-auth[requests]>=2.40",
     "alembic>=1.14",
+    "google-cloud-tasks>=2.19",
 ]
 
 [dependency-groups]

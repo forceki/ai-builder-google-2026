@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models import User
 
-PUBLIC = ["^/api/health$", "^/api/auth/login$", "^/api/auth/google$", "^/api/projects/[^/]+/events$", "^/schema"]
+PUBLIC = ["^/api/health$", "^/api/auth/login$", "^/api/auth/google$", "^/api/projects/[^/]+/events$", "^/tasks/", "^/schema"]
 
 GOOGLE_ONLY = "google-only"
 _GOOGLE_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}

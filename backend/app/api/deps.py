@@ -1,7 +1,6 @@
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from arq.connections import ArqRedis
 from litestar import Request
 from litestar.datastructures import State
 from litestar.exceptions import NotFoundException
@@ -10,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import session_scope
 from app.models import Project, User
+from app.queue import Queue
 
 
 async def provide_db(state: State) -> AsyncGenerator[AsyncSession]:
@@ -17,7 +17,7 @@ async def provide_db(state: State) -> AsyncGenerator[AsyncSession]:
         yield session
 
 
-async def provide_queue(state: State) -> ArqRedis:
+async def provide_queue(state: State) -> Queue:
     return state.queue
 
 

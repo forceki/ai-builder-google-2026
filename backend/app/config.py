@@ -12,7 +12,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="HIBANAKO_", env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+asyncpg://heatmark:heatmark@localhost:5433/heatmark"
-    redis_url: str = "redis://localhost:6380/0"
     # Create tables on API startup instead of running migrations (`alembic upgrade head`). Throwaway databases only.
     auto_create_tables: bool = False
 
@@ -51,6 +50,16 @@ class Settings(BaseSettings):
     rule_set: str = "RS-2.1"
     checks_debounce_seconds: int = 15
 
+    extract_timeout_seconds: int = 120
+
+    tasks_inline: bool = True
+    tasks_inline_concurrency: int = 4
+    tasks_queue: str = "hibanako-jobs"
+    tasks_location: str = "asia-southeast1"
+    tasks_service_url: str | None = None
+    tasks_service_account: str | None = None
+    tasks_deadline_seconds: int = 900
+
     @field_validator("jwt_secret")
     @classmethod
     def _long_enough(cls, v: SecretStr) -> SecretStr:
@@ -60,6 +69,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "gcp_project", "gcs_credentials_file", "gemini_api_key", "google_client_id", "google_client_secret",
+        "tasks_service_url", "tasks_service_account",
         mode="before",
     )
     @classmethod

@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Annotated
 
-from arq.connections import ArqRedis
 from litestar import Controller, delete, get, patch, post
 from litestar.datastructures import UploadFile
 from litestar.enums import RequestEncodingType
@@ -22,7 +21,7 @@ from app.events import publish
 from app.models import CheckRun, Document, User
 from app.models._common import utcnow
 from app.models.document import DocStatus, DocType
-from app.queue import PROCESS_DOCUMENT, RUN_CHECKS
+from app.queue import PROCESS_DOCUMENT, RUN_CHECKS, Queue
 from app.schemas.api import CheckRunOut, DocumentDetail, DocumentLinkOut, DocumentOut, DocumentTypeUpdate
 
 ALLOWED = {".pdf", ".jpg", ".jpeg", ".png", ".webp", ".xlsx", ".xlsm", ".csv", ".txt"}
@@ -50,7 +49,7 @@ class DocumentController(Controller):
     async def upload(
         self,
         db: AsyncSession, user: User,
-        queue: ArqRedis,
+        queue: Queue,
         project_no: str,
         data: Annotated[UploadForm, Body(media_type=RequestEncodingType.MULTI_PART)],
     ) -> DocumentOut:
@@ -85,8 +84,8 @@ class DocumentController(Controller):
         )
         db.add(doc)
         await db.commit()  # the worker must see the row before it picks up the job
-        await queue.enqueue_job(PROCESS_DOCUMENT, str(doc.id))
-        await publish(queue, project.id, "document", id=doc.id, status=doc.status)
+        await queue.enqueue(PROCESS_DOCUMENT, str(doc.id))
+        await publish(project.id, "document", id=doc.id, status=doc.status)
         return DocumentOut.model_validate(doc)
 
     @get("/{document_id:uuid}")
@@ -107,7 +106,7 @@ class DocumentController(Controller):
 
     @delete("/{document_id:uuid}", status_code=HTTP_200_OK)
     async def delete_document(
-        self, db: AsyncSession, user: User, queue: ArqRedis, project_no: str, document_id: uuid.UUID
+        self, db: AsyncSession, user: User, queue: Queue, project_no: str, document_id: uuid.UUID
     ) -> CheckRunOut:
         doc = await self._get(db, user, project_no, document_id)
         if doc.status in (DocStatus.QUEUED, DocStatus.READING):
@@ -117,13 +116,13 @@ class DocumentController(Controller):
         run = CheckRun(project_id=project_id, rule_set=get_settings().rule_set, findings=[])
         db.add(run)
         await db.commit()
-        await queue.enqueue_job(RUN_CHECKS, str(run.id))
-        await publish(queue, project_id, "run", id=run.id, status=run.status)
+        await queue.enqueue(RUN_CHECKS, str(run.id))
+        await publish(project_id, "run", id=run.id, status=run.status)
         return CheckRunOut.model_validate(run)
 
     @patch("/{document_id:uuid}")
     async def set_type(
-        self, db: AsyncSession, user: User, queue: ArqRedis, project_no: str, document_id: uuid.UUID, data: DocumentTypeUpdate
+        self, db: AsyncSession, user: User, queue: Queue, project_no: str, document_id: uuid.UUID, data: DocumentTypeUpdate
     ) -> DocumentOut:
         """Correct the document type and read the document again with the right schema."""
         doc = await self._get(db, user, project_no, document_id)
@@ -131,8 +130,8 @@ class DocumentController(Controller):
         doc.status = DocStatus.QUEUED
         doc.extraction = None
         await db.commit()
-        await queue.enqueue_job(PROCESS_DOCUMENT, str(doc.id))
-        await publish(queue, doc.project_id, "document", id=doc.id, status=doc.status)
+        await queue.enqueue(PROCESS_DOCUMENT, str(doc.id))
+        await publish(doc.project_id, "document", id=doc.id, status=doc.status)
         return DocumentOut.model_validate(doc)
 
     async def _get(self, db: AsyncSession, user: User, project_no: str, document_id: uuid.UUID) -> Document:

@@ -1,25 +1,7 @@
-# Postgres, Redis, the API and the background worker.
-#   docker compose up -d db redis          # just the services; run API/worker with uv
+# Postgres and the API. Background jobs run inside the API (HIBANAKO_TASKS_INLINE=true).
+#   docker compose up -d db                # just the database; run the API with uv
 #   docker compose up --build              # everything
-# Host ports 5433 / 6380 avoid clashing with a local Postgres / Redis.
-
-x-app: &app
-  build: .
-  env_file:
-    - path: .env
-      required: false
-  environment:
-    HIBANAKO_DATABASE_URL: postgresql+asyncpg://heatmark:heatmark@db:5432/heatmark
-    HIBANAKO_REDIS_URL: redis://redis:6379/0
-    # GCS credentials: mount your gcloud ADC file (from `gcloud auth application-default login`).
-    GOOGLE_APPLICATION_CREDENTIALS: /secrets/adc.json
-  volumes:
-    - ${HOME}/.config/gcloud/application_default_credentials.json:/secrets/adc.json:ro
-  depends_on:
-    db:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
+# Host port 5433 avoids clashing with a local Postgres.
 
 services:
   db:
@@ -35,21 +17,21 @@ services:
       interval: 2s
       retries: 20
 
-  redis:
-    image: redis:7-alpine
-    ports: ["6380:6379"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 2s
-      retries: 20
-
   api:
-    <<: *app
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HIBANAKO_DATABASE_URL: postgresql+asyncpg://heatmark:heatmark@db:5432/heatmark
+      HIBANAKO_TASKS_INLINE: "true"
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/adc.json
+    volumes:
+      - ${HOME}/.config/gcloud/application_default_credentials.json:/secrets/adc.json:ro
     ports: ["8000:8000"]
-
-  worker:
-    <<: *app
-    command: ["arq", "app.worker.WorkerSettings"]
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:

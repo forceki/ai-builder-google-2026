@@ -1,4 +1,3 @@
-from arq.connections import ArqRedis
 from litestar import Controller, delete, get, post
 from litestar.exceptions import ClientException, NotFoundException
 from litestar.status_codes import HTTP_202_ACCEPTED
@@ -12,7 +11,7 @@ from app.events import publish
 from app.models import CheckRun, Signoff, TraceItem, TraceLink, User
 from app.models._common import utcnow
 from app.models.check import RunStatus
-from app.queue import RUN_CHECKS
+from app.queue import RUN_CHECKS, Queue
 from app.schemas.api import CheckRunOut, SignoffIn, SignoffOut, TraceItemOut, TraceLinkOut, TraceMapOut
 from app.signoffs import active_signoff, current_fingerprint
 
@@ -30,23 +29,21 @@ class CheckController(Controller):
     path = "/api/projects/{project_no:str}"
 
     @post("/checks", status_code=HTTP_202_ACCEPTED)
-    async def run_checks(self, db: AsyncSession, user: User, queue: ArqRedis, project_no: str) -> CheckRunOut:
+    async def run_checks(self, db: AsyncSession, user: User, queue: Queue, project_no: str) -> CheckRunOut:
         project = await get_project(db, project_no, user)
         run = CheckRun(project_id=project.id, rule_set=get_settings().rule_set, findings=[])
         db.add(run)
         await db.commit()
-        await queue.enqueue_job(RUN_CHECKS, str(run.id))
-        await publish(queue, project.id, "run", id=run.id, status=run.status)
+        await queue.enqueue(RUN_CHECKS, str(run.id))
+        await publish(project.id, "run", id=run.id, status=run.status)
         return CheckRunOut.model_validate(run)
 
     @get("/checks/latest")
-    async def latest(self, db: AsyncSession, user: User, project_no: str, complete: bool = False) -> CheckRunOut:
+    async def latest(self, db: AsyncSession, user: User, project_no: str, complete: bool = False) -> CheckRunOut | None:
         """Latest run; with ?complete=true, the latest run that finished successfully."""
         project = await get_project(db, project_no, user)
         run = await _latest_run(db, project.id, complete_only=complete)
-        if run is None:
-            raise NotFoundException("checks have not been run for this project")
-        return CheckRunOut.model_validate(run)
+        return CheckRunOut.model_validate(run) if run else None
 
     @get("/trace")
     async def trace_map(self, db: AsyncSession, user: User, project_no: str) -> TraceMapOut:

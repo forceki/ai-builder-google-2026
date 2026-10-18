@@ -95,48 +95,49 @@ every finding traces back to the page it came from.
 
 ```mermaid
 flowchart LR
-    U([Engineer]) --> W["Web app<br/>Vue 3"]
-    W -- "REST /api" --> A["API<br/>Litestar"]
-    W <-. "WebSocket<br/>live updates" .-> A
-    A --> DB[("Postgres")]
+    U([Engineer]) --> W["Web app<br/>Vue 3 on Firebase Hosting"]
+    W -- "REST /api" --> A["API<br/>Litestar on Cloud Run"]
+    A -. "WebSocket<br/>live updates" .-> W
+    A -- "create task" --> T[("Cloud Tasks<br/>job queue")]
+    T -- "POST /tasks/job<br/>signed token" --> A
+    A --> G{{"Google Gemini"}}
+    A --> DB[("Cloud SQL<br/>Postgres")]
     A --> GCS[("Cloud Storage<br/>original PDFs")]
-    A -- "jobs" --> R[("Redis<br/>queue + pub/sub")]
-    R --> K["Worker"]
-    K --> G{{"Google Gemini"}}
-    K --> DB
-    K --> GCS
-    K -- "events" --> R
 ```
 
 | Part | Role |
 | --- | --- |
 | **Web app** | Google sign-in, projects, workspace (documents, trace map, inspector) and printable report |
-| **API** | Auth, projects, uploads, signed download links, check runs, sign-off, live events |
-| **Worker** | Reads documents with Gemini, runs checks, writes explanations in the background |
-| **Postgres** | Users, projects, extracted data, trace map, findings, sign-offs, AI usage log |
-| **Redis** | Job queue, and pub/sub that streams progress to the browser |
+| **API** | Auth, projects, uploads, signed download links, check runs, sign-off, live events, and the background jobs themselves |
+| **Cloud Tasks** | Durable job queue: calls the API back to read each document and run checks, retries on failure, delays the check run until uploads settle |
+| **Cloud SQL** | Users, projects, extracted data, trace map, findings, sign-offs, AI usage log |
 | **Cloud Storage** | Original files, private; opened through short-lived signed links |
 | **Gemini** | Classification, structured extraction, finding explanations |
+
+Locally there is no Cloud Tasks: with `HIBANAKO_TASKS_INLINE=true` the API runs the same jobs in-process,
+four at a time, so only Postgres is needed.
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
     participant A as API
-    participant W as Worker
+    participant T as Cloud Tasks
     participant G as Gemini
     B->>A: upload PDFs
-    A->>W: queue each document
-    W->>G: classify + extract
-    W-->>B: live: reading → extracted
-    Note over W: waits until uploads settle
-    W->>W: build trace graph, run checks
-    W-->>B: live: verdict + map ready
-    W->>G: explain each finding
-    W-->>B: live: explanations ready
+    A->>T: one task per document
+    T->>A: POST /tasks/process_document
+    A->>G: classify + extract
+    A-->>B: live: reading → extracted
+    Note over T: check task scheduled 15 s after the last upload
+    T->>A: POST /tasks/settle_checks, then run_checks
+    A-->>B: live: verdict + map ready
+    A->>G: explain each finding
+    A-->>B: live: explanations ready
     B->>A: engineer signs the report
 ```
 
 - **One run per batch.** Uploading ten files triggers one check run, not ten.
+- **Safe retries.** Cloud Tasks may deliver a job twice; a document already read or a run already finished is skipped. A document that takes more than 2 minutes fails with a message instead of hanging.
 - **Verdict first, explanations second.** The map and verdict appear as soon as the rules finish.
 - **Signature integrity.** A signature records exactly which documents it covered. If any document
   changes afterwards, the signature is marked **outdated** and the project needs re-signing.
@@ -209,9 +210,10 @@ replace a file), an audit history, and an accuracy evaluation across repeated ru
 | Layer | Technology |
 | --- | --- |
 | Frontend | Vue 3, Vite, Tailwind CSS v4, Vuex, Vue Router |
-| Backend | Python 3.12, Litestar, SQLAlchemy (async), Alembic, arq, Pydantic |
+| Backend | Python 3.12, Litestar, SQLAlchemy (async), Alembic, Pydantic |
 | AI | Google Gemini (`google-genai`, structured outputs) |
-| Data | PostgreSQL, Redis, Google Cloud Storage |
+| Data | Cloud SQL (PostgreSQL), Google Cloud Storage |
+| Jobs | Google Cloud Tasks (in-process locally) |
 | Auth | JWT, Google Identity Services |
 | Hosting | Docker, Firebase Hosting, Cloud Run |
 
@@ -219,7 +221,7 @@ replace a file), an audit history, and an accuracy evaluation across repeated ru
 
 | Folder | What it is |
 | --- | --- |
-| [`backend/`](backend/README.md) | API, worker, AI extraction, rules, models, migrations, tests |
+| [`backend/`](backend/README.md) | API, background jobs, AI extraction, rules, models, migrations, tests |
 | [`frontend/`](frontend/README.md) | Web app |
 | [`example-docs/`](example-docs/README.md) | Synthetic sample dossiers with their answer keys |
 | `docker-compose.yml` | Whole stack in Docker |

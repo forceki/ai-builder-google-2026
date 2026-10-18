@@ -75,8 +75,23 @@ const govs = computed(() => cat.value.governing.filter((g) => g.sector === secto
 const g = computed(() => cat.value.governing.find((x) => x.id === c.value.governing))
 const supps = computed(() => cat.value.supplementary.filter((s) => s.sectors.includes(sectorId.value)))
 const uploadMode = computed(() => c.value.upload_mode || 'batch')
+const purpose = computed(() => c.value.purpose || 'production')
 const run = computed(() => st.value.run)
 const r = computed(() => run.value?.result)
+// An investigation separates candidate causes (breaches found in the records) from evidence gaps (records missing).
+const findingGroups = computed(() => {
+  const all = r.value?.findings ?? []
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`
+  if (r.value?.purpose !== 'investigation') {
+    return all.length ? [{ title: `${n(all.length, 'FINDING', 'FINDINGS')} · FAIL FIRST, THEN WARN`, note: '', items: all }] : []
+  }
+  const causes = all.filter((f) => f.kind !== 'gap')
+  const gaps = all.filter((f) => f.kind === 'gap')
+  return [
+    { title: `${n(causes.length, 'CANDIDATE CAUSE', 'CANDIDATE CAUSES')}`, note: 'Breaches of the governing standard found in the records', items: causes },
+    { title: `${n(gaps.length, 'EVIDENCE GAP', 'EVIDENCE GAPS')}`, note: 'Records not submitted; their checks could not be made', items: gaps },
+  ].filter((g) => g.items.length)
+})
 const mode = computed(() => st.value.mode)
 const reviewMode = computed(() => run.value?.mode ?? mode.value)
 // Step 2 opens only after step 1 is confirmed with "Next: documents"; older assessments with files or a run count as confirmed.
@@ -109,13 +124,24 @@ const toggleSupp = (id) => {
   setCond({ supplementary: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] })
 }
 
+// Every slot is optional: the assessment runs on what is submitted and leaves the other checks pending.
+const docsHint = computed(() => {
+  const checked = st.value.slots.filter((s) => s.id !== 'other')
+  const empty = checked.filter((s) => !s.files.length).map((s) => s.label)
+  if (empty.length === checked.length) return 'Upload any of the documents below. Each is identified and read; the checks run on what you submit.'
+  if (!empty.length) return 'Every document type is in. Each one has been identified and matched to the conditions.'
+  return c.value.complete_set
+    ? `Not submitted: ${empty.join(', ')}. Assessed as missing, ranked by risk.`
+    : `Not submitted yet: ${empty.join(', ')}. Checks that need them stay pending.`
+})
+
 const head = computed(() => {
   const suppText = c.value.supplementary.length
     ? ` + ${c.value.supplementary.map((id) => cat.value.supplementary.find((s) => s.id === id)?.label).join(', ')}`
     : ''
   return [
     ['STEP 1 OF 3', 'Set the conditions', 'Pick where the equipment will be used and which standards apply. Every document is checked against these.'],
-    ['STEP 2 OF 3', 'Submit the documents', st.value.missing.length ? `Still needed: ${st.value.missing.join(', ')}.` : 'All required documents are in. Each one has been identified and matched to the conditions.'],
+    ['STEP 2 OF 3', 'Submit the documents', docsHint.value],
     [`STEP 3 OF 3 · ${reviewMode.value}`, reviewMode.value === 'PLAN' ? 'Plan review' : 'As-built review', `WPS and WPQ checked against the welding drawing under ${(run.value?.conditions ?? c.value).governing}${suppText}.`],
   ][step.value]
 })
@@ -123,15 +149,37 @@ const head = computed(() => {
 // Documents
 const addFiles = (names, slot) => names.length && call((p) => api.assessment.addFiles(p, names, slot))
 // Real files are uploaded one by one; the backend sorts each by content and reads it in the background.
-const uploadFiles = (list, slot) => Array.from(list || []).forEach((file) => call((p) => api.assessment.upload(p, file, slot)))
+// `sending` lists files still on their way up; `target` remembers the slot each file was uploaded into, so a file
+// shows in its slot card from the moment it is picked (uploading → reading) and stays there if it is rejected.
+const sending = ref([])
+const target = ref({})
+let sendId = 0
+const uploadFiles = (list, slot) =>
+  Array.from(list || []).forEach((file) => {
+    const id = ++sendId
+    sending.value = [...sending.value, { id, name: file.name, slot: slot ?? null }]
+    if (slot) target.value = { ...target.value, [file.name]: slot }
+    call((p) => api.assessment.upload(p, file, slot)).then(() => (sending.value = sending.value.filter((e) => e.id !== id)))
+  })
+const isSending = (name) => sending.value.some((e) => e.name === name)
+// Files on their way into a slot, or rejected from it: [{ name, state: uploading | reading | error, text }]
+const slotPending = (id) => [
+  ...sending.value.filter((e) => e.slot === id).map((e) => ({ name: e.name, state: 'uploading', text: 'Uploading…' })),
+  ...st.value.files
+    .filter((f) => !isSending(f.name) && (f.slot ?? target.value[f.name]) === id && (f.status === 'reading' || !f.slot))
+    .map((f) => (f.status === 'reading'
+      ? { name: f.name, state: 'reading', text: 'Reading…' }
+      : { name: f.name, state: 'error', text: f.reason || 'Could not be read.' })),
+]
+// Single-document mode has no batch list: files whose slot isn't known (e.g. after a reload) are listed above the slots.
+const unplaced = computed(() => st.value.files.filter((f) => !f.slot && !target.value[f.name]))
 const uploaded = computed(() => !st.value.sample_data)
-watch(
-  () => st.value?.reading.length,
-  (n) => {
-    clearTimeout(poll)
-    if (n) poll = setTimeout(() => call((p) => api.assessment.get(p)), 2500)
-  },
-)
+// Every new state while files are being read schedules the next check (watching the count alone stops polling as
+// soon as two replies in a row have the same number of files reading).
+watch(st, (s) => {
+  clearTimeout(poll)
+  if (s?.reading.length) poll = setTimeout(() => call((p) => api.assessment.get(p)), 2500)
+})
 onBeforeUnmount(() => clearTimeout(poll))
 const loadSample = (slot) => call((p) => api.assessment.loadSamples(p, slot))
 const removeFiles = (q) => call((p) => api.assessment.removeFiles(p, q))
@@ -171,6 +219,43 @@ async function setWaiver(key, status) {
   if (!error.value) waiving.value = null
 }
 const fmtTime = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+
+// Open an uploaded file in a new tab through a short-lived signed link. The tab opens first, on the click, so the
+// browser doesn't block it as a pop-up while the link is fetched.
+const docId = (name) => st.value.files.find((f) => f.name === name && f.document_id)?.document_id
+async function openDoc(name) {
+  const id = docId(name)
+  if (!id) return
+  const tab = window.open('', '_blank')
+  try {
+    const { url } = await api.documents.link(projectNo.value, id)
+    if (tab) tab.location.href = url
+    else window.open(url, '_blank')
+  } catch (e) {
+    tab?.close()
+    error.value = e.message || 'Could not open the document'
+  }
+}
+
+// Reviewer notes belong to the latest run; the draft follows it when a new run arrives.
+const notesDraft = ref('')
+const savingNotes = ref(false)
+watch(
+  () => [st.value?.run?.number, st.value?.run?.notes?.text],
+  () => (notesDraft.value = st.value?.run?.notes?.text ?? ''),
+  { immediate: true },
+)
+const notesDirty = computed(() => notesDraft.value.trim() !== (st.value?.run?.notes?.text ?? ''))
+async function saveNotes() {
+  savingNotes.value = true
+  await call((p) => api.assessment.setNotes(p, notesDraft.value))
+  savingNotes.value = false
+}
+// The report prints the saved notes, so save what was typed before going there.
+async function openReport() {
+  if (notesDirty.value) await saveNotes()
+  router.push(`/projects/${projectNo.value}/report`)
+}
 
 const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
 </script>
@@ -220,7 +305,7 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
             v-else-if="step === 1"
             type="button"
             :disabled="!st.ready || running"
-            :title="st.ready ? '' : 'Fill every required slot and resolve rejected files first'"
+            :title="st.ready ? '' : 'Submit at least one document, wait for reading to finish and resolve rejected files first'"
             class="btn-hard bg-signal px-4 py-[11px] text-xs tracking-[0.06em] uppercase"
             @click="st.state === 'complete' ? (step = 2) : runAssessment()"
           >{{ running ? 'Running…' : st.state === 'complete' ? 'View review →' : st.run ? 'Re-run assessment →' : 'Run assessment →' }}</button>
@@ -228,6 +313,7 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
             v-else-if="run"
             :to="`/projects/${projectNo}/report`"
             class="btn-hard bg-signal px-4 py-[11px] text-xs tracking-[0.06em] text-ink uppercase no-underline"
+            @click.prevent="openReport"
           >Generate report →</RouterLink>
         </div>
       </section>
@@ -331,7 +417,33 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
         </section>
 
         <section class="flex flex-col gap-3 border border-ink bg-white p-5">
-          <span class="font-mono text-[11px] font-bold tracking-[0.08em]">E · HOW WILL YOU SUBMIT THE DOCUMENTS?</span>
+          <span class="font-mono text-[11px] font-bold tracking-[0.08em]">E · WHAT IS THIS ASSESSMENT FOR?</span>
+          <div role="radiogroup" aria-label="Purpose" class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-2.5">
+            <button
+              v-for="m in cat.purposes"
+              :key="m.id"
+              type="button"
+              role="radio"
+              :aria-checked="m.id === purpose"
+              class="flex cursor-pointer items-start gap-3 border border-ink px-4 py-3.5 text-left"
+              :class="optClass(m.id === purpose)"
+              @click="setCond({ purpose: m.id })"
+            >
+              <span
+                aria-hidden="true"
+                class="mt-[3px] size-3.5 flex-none rounded-full border"
+                :class="m.id === purpose ? 'border-signal bg-signal' : 'border-ink'"
+              ></span>
+              <span class="flex flex-col gap-1">
+                <span class="text-base font-extrabold">{{ m.label }}</span>
+                <span class="text-[13px] leading-[1.4] opacity-85">{{ m.desc }}</span>
+              </span>
+            </button>
+          </div>
+        </section>
+
+        <section class="flex flex-col gap-3 border border-ink bg-white p-5">
+          <span class="font-mono text-[11px] font-bold tracking-[0.08em]">F · HOW WILL YOU SUBMIT THE DOCUMENTS?</span>
           <div role="radiogroup" aria-label="Upload mode" class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-2.5">
             <button
               v-for="m in uploadModes"
@@ -363,13 +475,35 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
           <span class="flex items-center gap-3">
             <span class="border-2 border-ink px-[9px] py-[3px] font-mono text-xs font-bold tracking-[0.1em]">{{ mode }}</span>
             <span class="text-[14.5px]">
-              {{ mode === 'PLAN'
-                ? 'No as-built document yet. The report will be a plan review, before fabrication.'
-                : 'As-built document added. The report will verify the finished work against the plan.' }}
+              {{ c.complete_set
+                ? 'Final record. The report checks the finished work, and anything missing is assessed as missing.'
+                : mode === 'PLAN'
+                  ? 'No as-built document yet. The report will be a plan review, before fabrication.'
+                  : 'As-built document added. The report will verify the finished work against the plan.' }}
             </span>
           </span>
           <button v-if="!uploaded" type="button" class="btn-hard bg-white px-3 py-2 text-[11.5px] whitespace-nowrap" @click="loadSample()">Load all samples</button>
         </div>
+        <label
+          class="flex cursor-pointer items-start gap-3 border bg-white px-[18px] py-3.5"
+          :class="c.complete_set ? 'border-2 border-ink' : 'border-ink/40'"
+        >
+          <input
+            type="checkbox"
+            class="mt-0.5 size-[18px] flex-none cursor-pointer accent-[var(--color-ink)]"
+            :checked="!!c.complete_set"
+            @change="setCond({ complete_set: $event.target.checked })"
+          />
+          <span class="flex flex-col gap-1">
+            <span class="text-[15px] font-bold">This is all the documents I have</span>
+            <span class="text-[13px] leading-[1.45] text-muted">
+              Assess the documents as the final record before release. Evidence the governing standard requires but
+              that isn't here fails, for example a PWHT record when PWHT is required. A missing document is a finding
+              ranked by its risk: a missing mill certificate is a note, a missing WPS fails. Leave it unticked to keep
+              checks pending while documents are still coming.
+            </span>
+          </span>
+        </label>
         <p v-if="st.unresolved.length" role="status" class="m-0 border border-reject bg-white px-[18px] py-3 text-[14px] text-reject">
           {{ st.unresolved.length }} rejected {{ st.unresolved.length > 1 ? 'files need' : 'file needs' }} a decision before the
           assessment can run: assign {{ st.unresolved.length > 1 ? 'each' : 'it' }} to a slot or remove it.
@@ -446,6 +580,14 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
                   :class="b.status === 'reading' ? 'text-faint' : !b.slot ? 'text-reject' : b.needs_confirm ? 'text-signal' : 'text-pass'"
                 >{{ b.status === 'reading' ? 'READING' : b.slot ? `→ ${slotLabel(b.slot).toUpperCase()}` : 'ERROR' }}</span>
                 <button
+                  v-if="b.document_id"
+                  type="button"
+                  :aria-label="`Open ${b.name}`"
+                  title="Open document"
+                  class="size-[26px] flex-none cursor-pointer border border-pending bg-white text-[12px] hover:border-ink"
+                  @click="openDoc(b.name)"
+                >↗</button>
+                <button
                   type="button"
                   :aria-label="`Remove ${b.name}`"
                   class="size-[26px] flex-none cursor-pointer border border-pending bg-white text-[11px] hover:border-ink"
@@ -462,24 +604,98 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
           >Try a sample batch (12 file names, 4 with errors; no real reading)</button>
         </section>
 
+        <ul
+          v-if="uploadMode !== 'batch' && unplaced.length"
+          aria-label="Files not in a slot"
+          class="m-0 flex list-none flex-col border border-ink bg-white p-0"
+        >
+          <li v-for="f in unplaced" :key="f.name" class="flex flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-ink/15 px-4 py-2.5 last:border-b-0">
+            <span aria-hidden="true" class="size-[9px] flex-none border border-ink" :class="f.status === 'reading' ? 'animate-pulse bg-pending' : 'bg-reject'"></span>
+            <span class="flex min-w-0 flex-[1_1_200px] flex-col gap-[3px]">
+              <span class="truncate font-mono text-[12.5px]">{{ f.name }}</span>
+              <span class="text-[12.5px] leading-[1.35]" :class="f.status === 'reading' ? 'text-muted' : 'text-reject'">{{ f.status === 'reading' ? 'Reading…' : f.reason }}</span>
+            </span>
+            <button
+              v-if="f.document_id"
+              type="button"
+              :aria-label="`Open ${f.name}`"
+              title="Open document"
+              class="size-[26px] flex-none cursor-pointer border border-pending bg-white text-[12px] hover:border-ink"
+              @click="openDoc(f.name)"
+            >↗</button>
+            <button
+              v-if="f.status !== 'reading'"
+              type="button"
+              :aria-label="`Remove ${f.name}`"
+              class="size-[26px] flex-none cursor-pointer border border-pending bg-white text-[11px] hover:border-ink"
+              @click="removeFiles({ name: f.name })"
+            >✕</button>
+          </li>
+        </ul>
+
         <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-4">
           <section
             v-for="s in st.slots"
             :key="s.id"
             class="flex flex-col bg-white"
-            :class="s.files.length ? 'border border-ink' : s.required ? 'border-[1.5px] border-dashed border-ink' : 'border border-dashed border-faint'"
+            :class="s.files.length || slotPending(s.id).length ? 'border border-ink' : s.required ? 'border-[1.5px] border-dashed border-ink' : 'border border-dashed border-faint'"
           >
             <div class="flex items-baseline justify-between gap-2.5 px-4 pt-3.5 pb-2.5">
               <span class="text-lg font-extrabold tracking-[-0.01em]">{{ s.label }}</span>
               <span
                 class="font-mono text-[10px] font-bold tracking-[0.08em]"
-                :class="s.files.length ? 'text-pass' : s.required ? 'text-signal' : 'text-faint'"
-              >{{ s.files.length ? 'IDENTIFIED' : s.required ? 'REQUIRED' : 'OPTIONAL' }}</span>
+                :class="s.files.length ? 'text-pass' : slotPending(s.id).length ? 'text-muted' : s.required ? 'text-signal' : 'text-faint'"
+              >{{ s.files.length ? 'IDENTIFIED' : slotPending(s.id).some((p) => p.state !== 'error') ? 'IN PROGRESS' : s.required ? 'REQUIRED' : 'OPTIONAL' }}</span>
             </div>
             <span class="px-4 pb-3 text-[13px] leading-[1.4] text-muted">{{ s.desc }}</span>
+            <div
+              v-if="s.if_missing && !s.files.length && !slotPending(s.id).length"
+              class="mx-4 mb-3 flex flex-col gap-1 border-l-[3px] py-0.5 pl-2.5"
+              :class="{ FAIL: 'border-reject', WARN: 'border-signal', INFO: 'border-faint' }[s.if_missing.severity]"
+            >
+              <span
+                class="font-mono text-[10px] font-bold tracking-[0.08em]"
+                :class="{ FAIL: 'text-reject', WARN: 'text-signal', INFO: 'text-faint' }[s.if_missing.severity]"
+              >
+                IF MISSING · {{ s.if_missing.risk }} RISK · {{ { FAIL: s.required ? 'DEEMED REJECTED' : 'FAILS', WARN: 'NOTE', INFO: 'NOT ASSESSED' }[s.if_missing.severity] }}{{ c.complete_set || s.required || s.if_missing.severity === 'INFO' ? '' : ' (WHEN FINAL)' }}
+              </span>
+              <span class="text-[12px] leading-[1.4] text-muted">{{ s.if_missing.statement }} <span class="font-mono text-[11px]">{{ s.if_missing.clause }}</span></span>
+            </div>
+            <ul v-if="slotPending(s.id).length" role="status" class="m-0 flex list-none flex-col border-t border-ink/15 p-0">
+              <li
+                v-for="p in slotPending(s.id)"
+                :key="`${p.state}:${p.name}`"
+                class="animate-row-in flex items-center gap-2.5 border-b border-ink/10 px-4 py-2.5 last:border-b-0"
+                :class="p.state === 'error' ? 'shadow-[inset_3px_0_0_var(--color-reject)]' : ''"
+              >
+                <span v-if="p.state === 'error'" aria-hidden="true" class="size-[9px] flex-none border border-ink bg-reject"></span>
+                <span v-else aria-hidden="true" class="spinner size-3.5 flex-none rounded-full border-2 border-ink/20"></span>
+                <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span class="truncate font-mono text-[11.5px]">{{ p.name }}</span>
+                  <span class="text-[12px] leading-[1.35]" :class="p.state === 'error' ? 'text-reject' : 'text-muted'">{{ p.text }}</span>
+                </span>
+                <button
+                  v-if="p.state === 'error'"
+                  type="button"
+                  :aria-label="`Remove ${p.name}`"
+                  class="size-[24px] flex-none cursor-pointer border border-pending bg-white text-[11px] hover:border-ink"
+                  @click="removeFiles({ name: p.name })"
+                >✕</button>
+              </li>
+            </ul>
             <template v-if="s.files.length">
               <ul class="m-0 flex animate-row-in list-none flex-col gap-1.5 border-t border-ink/15 px-4 py-2.5">
-                <li v-for="f in s.files" :key="f" class="truncate font-mono text-[11.5px]">▪ {{ f }}</li>
+                <li v-for="f in s.files" :key="f" class="flex items-center gap-2 font-mono text-[11.5px]">
+                  <span class="min-w-0 flex-1 truncate">▪ {{ f }}</span>
+                  <button
+                    v-if="docId(f)"
+                    type="button"
+                    :aria-label="`Open ${f}`"
+                    title="Open document"
+                    class="size-[22px] flex-none cursor-pointer border border-pending bg-white text-[11px] hover:border-ink"
+                    @click="openDoc(f)"
+                  >↗</button>
+                </li>
               </ul>
               <div class="flex flex-col gap-1 border-t border-ink/15 bg-panel px-4 py-2.5">
                 <span class="font-mono text-[10px] tracking-[0.08em] text-faint">IDENTIFIED</span>
@@ -523,6 +739,16 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
           </button>
         </div>
 
+        <div
+          v-for="a in r.alerts || []"
+          :key="a"
+          role="alert"
+          class="flex flex-wrap items-center gap-3 border-2 border-reject bg-reject px-[18px] py-3 text-white"
+        >
+          <span class="border-2 border-white px-2 py-0.5 font-mono text-xs font-bold tracking-[0.1em]">HIGH ALERT</span>
+          <span class="text-[15px] font-bold">{{ a }}</span>
+        </div>
+
         <div class="flex flex-wrap gap-3">
           <div class="flex flex-[1_1_260px] flex-col gap-1.5 border-2 bg-white px-[18px] py-4" :class="BORDER[r.verdict_tone]">
             <span class="font-mono text-[10.5px] tracking-[0.08em] text-faint">ASSESSMENT CONCLUSION</span>
@@ -542,13 +768,41 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
           </div>
         </div>
 
-        <section v-if="r.findings.length" class="border border-ink bg-white">
-          <span class="block border-b border-ink px-4 py-3 font-mono text-[11px] font-bold tracking-[0.08em]">
-            {{ r.findings.length }} {{ r.findings.length > 1 ? 'FINDINGS' : 'FINDING' }} · FAIL FIRST, THEN WARN
+        <section aria-labelledby="notes-h" class="flex flex-col gap-2.5 border border-ink bg-white px-4 py-3.5">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <span id="notes-h" class="font-mono text-[11px] font-bold tracking-[0.08em]">REVIEWER NOTES</span>
+            <span class="font-mono text-[10.5px] text-faint">
+              {{ run.notes ? `Saved · ${run.notes.by} · ${fmtTime(run.notes.at)}` : 'Printed on the report with the conclusion' }}
+            </span>
+          </div>
+          <textarea
+            v-model="notesDraft"
+            rows="3"
+            aria-labelledby="notes-h"
+            @blur="notesDirty && saveNotes()"
+            :placeholder="r.verdict === 'ACCEPTABLE WITH NOTES'
+              ? 'Your decision on the warnings and gaps, e.g. which records were requested, or why they are accepted…'
+              : 'Notes on this conclusion for the report…'"
+            class="w-full resize-y border border-ink/40 bg-white px-3 py-2 text-[14px] leading-[1.45] focus:border-ink"
+          ></textarea>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              :disabled="savingNotes || !notesDirty"
+              class="btn-hard bg-white px-3 py-1.5 text-[11px] uppercase"
+              @click="saveNotes"
+            >{{ savingNotes ? 'Saving…' : 'Save notes' }}</button>
+            <span v-if="notesDirty" class="text-[12.5px] text-muted">Unsaved changes · saved when you leave the box</span>
+          </div>
+        </section>
+
+        <section v-for="g in findingGroups" :key="g.title" class="border border-ink bg-white">
+          <span class="flex flex-wrap items-baseline justify-between gap-2 border-b border-ink px-4 py-3 font-mono text-[11px] font-bold tracking-[0.08em]">
+            <span>{{ g.title }}</span><span class="font-normal text-faint">{{ g.note }}</span>
           </span>
           <ol class="m-0 list-none p-0">
             <li
-              v-for="f in r.findings"
+              v-for="f in g.items"
               :key="f.key"
               class="flex flex-col gap-1.5 border-b border-ink/15 px-4 py-3.5 last:border-b-0"
               :class="f.status === 'waived' ? 'opacity-70' : ''"
@@ -556,6 +810,7 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
               <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[11px] font-bold tracking-[0.04em]">
                 <span class="px-1.5 py-0.5" :class="f.status === 'waived' ? 'bg-panel text-faint line-through' : SEVERITY[f.severity]">{{ f.severity }}</span>
                 <span>{{ f.rule_id }}</span><span class="text-faint">{{ f.id }}</span><span>{{ f.item }}</span>
+                <span v-if="f.kind === 'gap'" class="border border-ink/40 px-1.5 py-px text-muted">EVIDENCE GAP</span>
                 <span v-if="f.status === 'waived'" class="border border-ink px-1.5 py-px">WAIVED</span>
               </div>
               <p class="m-0 text-[14.5px] leading-[1.45]">{{ f.statement }}</p>
@@ -637,5 +892,19 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
 <style scoped>
 .row-err {
   background: color-mix(in srgb, var(--color-reject) 5%, var(--color-white));
+}
+.spinner {
+  border-top-color: var(--color-signal);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
 }
 </style>

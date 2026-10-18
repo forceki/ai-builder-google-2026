@@ -74,6 +74,7 @@ const orNull = (promise) => promise.catch((e) => (e instanceof ApiError && e.sta
 const p = (no) => `/projects/${encodeURIComponent(no)}`
 
 export const api = {
+  requestDemo: (email, website = '') => request('POST', '/demo-requests', { json: { email, website } }),
   auth: {
     login: (email, password) => request('POST', '/auth/login', { json: { email, password } }),
     google: (credential) => request('POST', '/auth/google', { json: { credential } }),
@@ -129,6 +130,7 @@ export const api = {
       return blobUrl(`${p(no)}/assessment/snapshot?${q}`)
     },
     run: (no) => request('POST', `${p(no)}/assessment/runs`),
+    setNotes: (no, text) => request('PUT', `${p(no)}/assessment/notes`, { json: { text } }),
     setWaiver: (no, key, status, reason = '') =>
       request('PATCH', `${p(no)}/assessment/findings/${encodeURIComponent(key)}`, { json: { status, reason } }),
   },

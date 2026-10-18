@@ -22,7 +22,17 @@ from dataclasses import asdict, dataclass, field
 from datetime import date
 from math import inf
 
-from app.assessment.catalog import GOVERNING, PROFILES, SECTORS, SLOTS, SUPP_BY_ID, Governing
+from app.assessment.catalog import (
+    GOVERNING,
+    PROFILES,
+    PURPOSES,
+    SECTORS,
+    SLOTS,
+    SUPP_BY_ID,
+    Governing,
+    if_missing,
+    purpose_of,
+)
 from app.assessment.dossier import Dossier, Evidence, Joint, Material
 
 # Positions each production position needs.
@@ -41,6 +51,7 @@ INFO = "INFO"
 ACCEPTABLE, WITH_NOTES, NOT_ACCEPTABLE, INCOMPLETE = "ACCEPTABLE", "ACCEPTABLE WITH NOTES", "NOT ACCEPTABLE", "INCOMPLETE"
 VERDICT_TONE = {ACCEPTABLE: "pass", WITH_NOTES: "warn", NOT_ACCEPTABLE: "reject", INCOMPLETE: "muted"}
 SEVERITY_ORDER = {FAIL: 0, WARN: 1, INFO: 2}
+SLOT_LABELS = {s.id: s.label for s in SLOTS}
 
 
 @dataclass
@@ -78,10 +89,13 @@ class Section:
     headers: list[str]
     rows: list[list[Cell]] | None  # None = waiting on a document
     missing: str = ""
+    skipped: bool = False  # rows is None because an optional document was not submitted
 
     @property
     def status(self) -> str:
-        return PENDING if self.rows is None else worst(*(r[-1].v for r in self.rows))
+        if self.rows is None:
+            return "N/A" if self.skipped else PENDING
+        return worst(*(r[-1].v for r in self.rows))
 
 
 @dataclass
@@ -97,6 +111,9 @@ class Finding:
     status: str = "open"  # open | waived
     waiver: dict | None = None
     evidence: list[dict] = field(default_factory=list)  # [{file, page, box, label}] for snapshots of the source
+    # breach: a record shows a requirement is not met · gap: the record that would show it was not submitted.
+    # A release needs both closed; an investigation looks for causes in breaches and lists gaps separately.
+    kind: str = "breach"
 
     @property
     def key(self) -> str:
@@ -119,6 +136,8 @@ class Assessment:
     findings: list[Finding] = field(default_factory=list)
     sections: list[Section] = field(default_factory=list)
     criteria: list[dict] = field(default_factory=list)
+    purpose: str = "production"
+    alerts: list[str] = field(default_factory=list)  # high alerts shown above the conclusion
     counts: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
@@ -155,8 +174,8 @@ def conclude(findings: list[Finding], pending: bool) -> str:
     return ACCEPTABLE
 
 
-def _norm(s: str) -> str:
-    return re.sub(r"[^A-Z0-9]", "", s.upper())
+def _norm(s: str | None) -> str:
+    return re.sub(r"[^A-Z0-9]", "", (s or "").upper())
 
 
 def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, today: date | None = None,
@@ -172,7 +191,11 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
     has = supp.__contains__
     mdmt = float(conditions.get("mdmt_c", -20))
     hv_limit = MR0103_HV10_MAX if has("MR0103") else MR0175_HV10_MAX if has("MR0175") else None
-    mode = "AS-BUILT" if "asbuilt" in present else "PLAN"
+    # "This is all the documents I have": the set is the final record. Missing documents are findings ranked by risk
+    # (catalog.if_missing) and evidence the governing standard requires, such as PWHT records, is checked as missing.
+    complete = bool(conditions.get("complete_set"))
+    purpose = purpose_of(conditions)
+    mode = "AS-BUILT" if "asbuilt" in present or complete else "PLAN"
     materials = {m.heat: m for m in dossier.materials}
     joints: list[Joint] = dossier.joints if "drawing" in present else []
     sections: list[Section] = []
@@ -187,13 +210,16 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         hits = [n for n in names if any(_norm(r) and _norm(r) in _norm(n) for r in refs)]
         return hits or names
 
-    def find(rule_id, severity, item, statement, clause_, fix, documents, ev=None):
-        findings.append(Finding(rule_id, severity, item, statement, clause_, fix, documents, evidence=ev or []))
+    def find(rule_id, severity, item, statement, clause_, fix, documents, ev=None, kind="breach"):
+        findings.append(Finding(rule_id, severity, item, statement, clause_, fix, documents, evidence=ev or [], kind=kind))
 
-    def once(rule_id, severity, item, statement, clause_, fix, documents, ev=None):
+    def gap(rule_id, severity, item, statement, clause_, fix, documents, ev=None):
+        find(rule_id, severity, item, statement, clause_, fix, documents, ev, kind="gap")
+
+    def once(rule_id, severity, item, statement, clause_, fix, documents, ev=None, kind="breach"):
         """Report a document-level gap once, however many joints run into it."""
         if not any(f.rule_id == rule_id and f.item == item for f in findings):
-            find(rule_id, severity, item, statement, clause_, fix, documents, ev)
+            find(rule_id, severity, item, statement, clause_, fix, documents, ev, kind)
 
     def evid(*parts) -> list[dict]:
         """Evidence for a finding: Evidence objects, records (their whole-record box) or (record, field) pairs."""
@@ -274,19 +300,45 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
     sections.append(Section(
         "mat", "Material Information", "From mill certificates. P-Number per ASME IX QW/QB-422.",
         ["Heat", "Specification", "P-No.", "Thickness", "Condition", "CE (IIW)", "Impact", "Tensile", "Result"],
-        [material_row(m) for m in dossier.materials] if "mtc" in present else None, "Mill certificate not submitted."))
+        [material_row(m) for m in dossier.materials] if "mtc" in present else None,
+        "Mill certificate not submitted; material checks were not run.", skipped=True))
+    if "mtc" not in present:
+        im = if_missing("mtc", conditions)
+        gap("S-MTC-06", im.severity, "Mill certificates", im.statement, clause(im.clause, im.clause), im.fix, [])
+    # WPQ: mandatory for a production release (missing → high alert, deemed rejected), background for an investigation.
+    alerts: list[str] = []
+    if "wpq" not in present:
+        im = if_missing("wpq", conditions)
+        gap("S-WPQ-00", im.severity, "WPQ", im.statement, clause(im.clause, im.clause), im.fix, [])
+        if purpose == "production":
+            alerts.append("Deemed rejected: production welds without any welder qualification (WPQ).")
+    if complete:
+        for slot in ("wps", "drawing"):
+            if slot not in present:
+                im = if_missing(slot, conditions)
+                gap("S-DOC-01", im.severity, SLOT_LABELS[slot], im.statement, im.clause, im.fix, [])
+        if "asbuilt" not in present and "drawing" not in present:  # with a drawing, each missing record is its own finding
+            im = if_missing("asbuilt", conditions)
+            gap("S-DOC-01", im.severity, SLOT_LABELS["asbuilt"], im.statement, im.clause, im.fix, [])
 
     # X-05 PWHT determination, per joint
     pwht: dict[str, tuple[bool, str, str]] = {}
     for j in joints:
         m = materials.get(j.heat)
         p_no = m.p_no if m else None
+        # Final set without certificates: apply the P-No.1 thickness limits, the least strict, so PWHT is never missed
+        # where even carbon steel would need it.
+        assumed = "mtc" not in present and complete and bool(g.pwht_mm)
+        if assumed:
+            p_no = "1"
         wps = dossier.procedures.get(j.wps)
         required, basis, ref = False, "", g.clause
         if not j.pressure:
             basis, ref = "Non-pressure attachment", "—"
         elif has("LETHAL") and gov_id == "ASME VIII-1":
             required, basis, ref = True, "Lethal service", "UW-2(a)"
+        elif "mtc" not in present and g.pwht_mm and not assumed:
+            basis = "No mill certificate; thickness rule not applied"
         elif g.pwht_mm and p_no == "1" and j.thickness_mm is None:
             basis = "Thickness not on the drawing"
             find("S-DRW-02", WARN, j.id, f"{j.id}: no thickness on the drawing; PWHT not determined.",
@@ -307,6 +359,8 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
             required, basis, ref = True, "Weld hardness above 200 HBW (MR0103)", "NACE MR0103"
         if not required and j.pwht_required:
             required, basis, ref = True, "Drawing / WPS note", "Design"
+        if assumed and basis.startswith("P-No.1"):
+            basis += " (P-No.1 assumed: no mill certificate)"
         pwht[j.id] = (required, basis, ref)
 
     def pwht_row(j: Joint) -> list[Cell]:
@@ -315,7 +369,9 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         # A WPS that was not submitted is reported once (S-WPS-01); its PWHT is unknown, not failed.
         qualified = None if "wps" not in present or wps is None else bool(wps.pwht)
         status = PENDING if qualified is None else PASS if (qualified or not required) else FAIL
-        if status == FAIL:
+        if qualified is None and complete:  # final set without the WPS: S-DOC-01 already reports it
+            status = FAIL if required else PASS
+        if status == FAIL and qualified is False:  # no WPS at all is S-WPS-01 / S-DOC-01, not a PWHT finding
             find("X-05", FAIL, j.id, f"{j.id}: PWHT is required ({basis}) but {j.wps} is not qualified with PWHT; adding "
                  "PWHT is an essential variable.", clause(f"{ref}; ASME IX QW-407.1"),
                  f"Assign a WPS qualified with PWHT to {j.id}, or qualify {j.wps} with PWHT.",
@@ -329,16 +385,32 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
     sections.append(Section(
         "pwht", "PWHT Determination", f"Governing rule ({gov_id}): {g.rule}",
         ["Joint", "Material", "Governing t", "Basis", "Clause", "Determination", "WPS PWHT", "Result"],
-        [pwht_row(j) for j in joints] if {"mtc", "drawing"} <= present else None,
-        "Mill certificate and welding drawing are needed to determine PWHT."))
+        [pwht_row(j) for j in joints] if "drawing" in present else None,
+        "The welding drawing is needed to determine PWHT.", skipped=complete))
 
     # WPS, per joint (X-03, X-04, X-10, X-09)
     def wps_row(j: Joint) -> list[Cell]:
         w = dossier.procedures.get(j.wps) if j.wps else None
         if w is None:
-            find("S-WPS-01", FAIL, j.id, f"{j.id}: {j.wps} not submitted." if j.wps else f"{j.id}: no WPS assigned.", clause("ASME IX QW-200"),
-                 f"Upload {j.wps} with its PQR, or assign a submitted WPS." if j.wps else f"Assign a WPS to {j.id}.",
-                 docs("drawing") + list(getattr(dossier.as_built.get(j.id), "sources", ())), ev=evid(j, *log_ev(j.id)))
+            jdocs = docs("drawing") + list(getattr(dossier.as_built.get(j.id), "sources", ()))
+            if j.wps:
+                gap("S-WPS-01", FAIL, j.id, f"{j.id}: {j.wps} not submitted.", clause("ASME IX QW-200"),
+                    f"Upload {j.wps} with its PQR, or assign a submitted WPS.", jdocs, ev=evid(j, *log_ev(j.id)))
+            else:
+                # No assignment on the drawing: name the submitted WPS that could cover the joint, so the reviewer
+                # knows what the missing weld map has to decide.
+                m = materials.get(j.heat)
+                fits = [p for p in dossier.procedures.values()
+                        if (m is None or m.p_no is None or p.p_no is None or p.p_no == m.p_no)
+                        and (j.thickness_mm is None or p.t_min_mm is None or p.t_max_mm is None
+                             or p.t_min_mm <= j.thickness_mm <= p.t_max_mm)]
+                at = f"{j.thickness_mm:g} mm" if j.thickness_mm is not None else "its thickness"
+                cover = (f"{len(fits)} submitted WPS could cover {at} ({', '.join(p.id for p in fits)})" if fits
+                         else f"none of the {len(dossier.procedures)} submitted WPS covers {at}" if dossier.procedures
+                         else "no WPS was submitted")
+                gap("S-WPS-01", FAIL, j.id, f"{j.id}: the drawing assigns no WPS; {cover}.", clause("ASME IX QW-200"),
+                    f"Upload the weld map or WPS-to-joint matrix that assigns the WPS to {j.id}.", jdocs,
+                    ev=evid(j, *log_ev(j.id)))
             return [cell(j.id, bold=True), cell(j.wps or "None", "reject", True), *(cell("—") for _ in range(4)), result(FAIL)]
         m = materials.get(j.heat)
         wdocs = src(w, "wps", j.wps, w.pqr or "")
@@ -386,7 +458,8 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         "wps", "WPS Review",
         f"Essential variables per {'ASME IX QW-250' if g.asme else g.qual}, checked against each joint on the welding drawing.",
         ["Joint", "WPS / PQR", "P-No.", "Thickness", "PWHT", "Hardness", "Result"],
-        [wps_row(j) for j in joints] if {"wps", "drawing"} <= present else None, "WPS and welding drawing are needed."))
+        [wps_row(j) for j in joints] if {"wps", "drawing"} <= present else None, "WPS and welding drawing are needed.",
+        skipped=complete))
 
     # WPQ, per joint (X-06 qualification, X-07 continuity)
     def welder_check(j: Joint, welder: str, on: date, as_built: bool) -> tuple[list[Finding], list[Cell]]:
@@ -403,7 +476,8 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         if q is None:
             return [Finding(rule_q, FAIL, item, f"Welder {welder} {was} not qualified{when}: no WPQ on file.",
                             clause("ASME IX QW-301"), f"Provide the WPQ of welder {welder}, or re-weld {j.id} with a "
-                            "qualified welder.", docs("asbuilt" if as_built else "drawing"), evidence=evid(j, *log_ev(j.id)))], \
+                            "qualified welder.", docs("asbuilt" if as_built else "drawing"), evidence=evid(j, *log_ev(j.id)),
+                            kind="gap")], \
                 [cell(f"Welder {welder}", "reject", True), *(cell("—") for _ in range(5))]
         processes = w.processes if w else ()
         pr_ok = all(p in q.processes for p in processes)
@@ -471,8 +545,8 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         f"Welder qualification per {'ASME IX QW-300' if g.asme else g.qual} against the WPS and the joint on the drawing. "
         "Continuity limit: 6 months.",
         ["Joint", "Welder", "Process", "Position", "Thickness", "Diameter", "Continuity", "Result"],
-        [wpq_row(j) for j in joints] if {"wpq", "wps", "drawing"} <= present else None,
-        "WPQ, WPS and welding drawing are needed."))
+        [wpq_row(j) for j in joints] if {"wpq", "drawing"} <= present and ("wps" in present or complete) else None,
+        "WPQ, WPS and welding drawing are needed.", skipped=complete or purpose == "investigation"))
 
     # Supplementary requirements
     rows: list[list[Cell]] = []
@@ -480,23 +554,27 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
     have_wps, have_dwg = "wps" in present, "drawing" in present
 
     def evidence(rule_id: str, label: str, need: str, limit: str, have: bool, text: str, passed: bool | None,
-                 pending_text: str, ref: str, fix: str, slot: str, severity: str = FAIL):
+                 pending_text: str, ref: str, fix: str, slot: str, severity: str = FAIL, unstated: bool = False):
+        """unstated: the document is in but doesn't record the value (e.g. no PQR hardness survey) → an evidence gap."""
         status = PENDING if not have else WARN if passed is None else PASS if passed else severity
+        if not have and complete:  # final set: evidence for a selected requirement was never submitted
+            status, text = severity, f"{SLOT_LABELS[slot]} not submitted"
         if status in (FAIL, WARN):
-            find(rule_id, status, label, f"{need}: {text or 'not recorded'}; limit {limit}.", ref, fix, docs(slot))
+            find(rule_id, status, label, f"{need}: {text or 'not recorded'}; limit {limit}.", ref, fix, docs(slot),
+                 kind="gap" if not have or (unstated and not passed) else "breach")
         rows.append([cell(label, bold=True), cell(need), cell(limit),
-                     cell(text if have else pending_text, "ink" if have else "muted"), result(status)])
+                     cell(text if have or complete else pending_text, "ink" if have else "muted"), result(status)])
 
     max_hv = inf if any(p.hardness_hv10 is None for p in procs) else max((p.hardness_hv10 for p in procs), default=0)
     hv_text = ", ".join(f"{p.pqr or p.id}: {num(p.hardness_hv10, ' HV10')}" for p in procs)
     if has("MR0103"):
         evidence("X-10", "NACE MR0103", "Weld deposit hardness, wetted joints", "≤ 200 HBW", have_wps, hv_text,
                  max_hv <= MR0103_HV10_MAX, "WPS pending", "ISO 17945, NACE SP0472",
-                 "Provide a PQR hardness survey within 200 HBW, or add PWHT.", "wps")
+                 "Provide a PQR hardness survey within 200 HBW, or add PWHT.", "wps", unstated=max_hv == inf)
     if has("MR0175"):
         evidence("X-10", "NACE MR0175", "Weld and HAZ hardness", f"≤ 22 HRC ({MR0175_HV10_MAX} HV10)", have_wps, hv_text,
                  max_hv <= MR0175_HV10_MAX, "WPS pending", "ISO 15156-2",
-                 "Provide a PQR hardness survey within 22 HRC, or add PWHT.", "wps")
+                 "Provide a PQR hardness survey within 22 HRC, or add PWHT.", "wps", unstated=max_hv == inf)
     if has("LETHAL"):
         butt = [j for j in dossier.joints if j.pressure and j.kind == "groove"]
         evidence("X-11", "Lethal service", "Full radiography of butt welds", "RT 100%", have_dwg,
@@ -506,7 +584,9 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         evidence("X-09", "Impact tested", "PQR toughness", f"Test temp ≤ MDMT {mdmt:g} °C", have_wps,
                  ", ".join(f"{p.pqr or p.id} @ {num(p.impact_temp_c, ' °C')}" for p in procs),
                  all(p.impact_temp_c is not None and p.impact_temp_c <= mdmt for p in procs),
-                 "WPS pending", clause("UCS-67, ASME IX QW-170"), "Qualify a PQR with Charpy tests at or below MDMT.", "wps")
+                 "WPS pending", clause("UCS-67, ASME IX QW-170"), "Qualify a PQR with Charpy tests at or below MDMT.", "wps",
+                 unstated=any(p.impact_temp_c is None for p in procs)
+                 and all(p.impact_temp_c is None or p.impact_temp_c <= mdmt for p in procs))
     if has("ISO3834"):
         # No certificate slot yet, so this needs a reviewer decision until one can be submitted.
         evidence("S-SUP-01", "ISO 3834-2", "Manufacturer certification, welding coordinator (ISO 14731)", "Certificate on file",
@@ -551,8 +631,12 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         def weld_log_row(j: Joint) -> list[Cell]:
             a = dossier.as_built.get(j.id)
             if a is None:
-                find("X-13", FAIL, f"{j.id} (as-built)", f"{j.id} on the weld map but not in the weld log.",
-                     "QC system", f"Add {j.id} to the weld log with welder, date and WPS.", asb_docs, ev=evid(j))
+                if "asbuilt" not in present:  # final set with no as-built record at all: one finding, not one per joint
+                    im = if_missing("asbuilt", conditions)
+                    once("S-DOC-01", im.severity, SLOT_LABELS["asbuilt"], im.statement, im.clause, im.fix, [], kind="gap")
+                else:
+                    gap("X-13", FAIL, f"{j.id} (as-built)", f"{j.id} on the weld map but not in the weld log.",
+                         "QC system", f"Add {j.id} to the weld log with welder, date and WPS.", asb_docs, ev=evid(j))
                 return [cell(j.id, bold=True), cell(j.welder or "—"), cell("—", "reject"), *(cell("—") for _ in range(4)), result(FAIL)]
             out, _ = welder_check(j, a.welder, a.weld_date, as_built=True)
             # The planned welder's qualification is already X-06; only a continuity result the plan did not show is new.
@@ -583,9 +667,11 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
             heats_seen = dict.fromkeys(h for hs in (a.record_heats.values() or [a.heats]) for h in hs) or dict.fromkeys(a.heats)
             for h in heats_seen:
                 m = materials.get(h)
+                if m is None and "mtc" not in present:
+                    continue  # mill certificates are optional; S-MTC-06 already says the material was not checked
                 if m is None:
                     heats_ok = False
-                    find("X-14", FAIL, f"{j.id} heat {h}", f"Heat {h} (welded at {j.id}) has no mill certificate.",
+                    gap("X-14", FAIL, f"{j.id} heat {h}", f"Heat {h} (welded at {j.id}) has no mill certificate.",
                          "UG-77, UG-93" if g.asme else "Material traceability",
                          f"Upload the EN 10204 3.1 certificate for heat {h}, or replace the material.", weld_docs(j.id), ev=evid(*log_ev(j.id)))
                 elif w and m.p_no and w.p_no and m.p_no != w.p_no:
@@ -614,7 +700,7 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         charted = {jid for c in dossier.pwht_charts for jid in c.joints}
         for jid, (required, basis, _ref) in pwht.items():
             if required and jid not in charted:
-                find("X-15", FAIL, f"{jid} (as-built)", f"{jid}: PWHT required ({basis[0].lower() + basis[1:]}); no PWHT record.",
+                gap("X-15", FAIL, f"{jid} (as-built)", f"{jid}: PWHT required ({basis[0].lower() + basis[1:]}); no PWHT record.",
                      clause("UCS-56(d), Table UCS-56-1", g.clause), f"Provide the PWHT chart and load list covering {jid}.",
                      weld_docs(jid), ev=evid(by_joint.get(jid), *log_ev(jid)))
                 pwht_rows.append([cell("—"), cell(jid, "reject", True), *(cell("—") for _ in range(4)), result(FAIL)])
@@ -685,8 +771,10 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
             ndocs = [r.source for r in reports if r.source] or weld_docs(j.id)
             for m, p in short.items():
                 why = "required by the code" if code_note and m == "RT" and planned.get("RT", 0) < 100 else "planned"
+                # No report at all for the method is missing evidence; a report showing less than required is a breach.
                 find("X-16", FAIL, j.id, f"{j.id}: {m} {p:g}% {why}, {done.get(m, 0):g}% performed.",
-                     clause("UW-11, UW-52; ASME V", g.nde), f"Perform the missing {m} on {j.id} and upload the report.", ndocs, ev=evid(j, *reports))
+                     clause("UW-11, UW-52; ASME V", g.nde), f"Perform the missing {m} on {j.id} and upload the report.", ndocs,
+                     ev=evid(j, *reports), kind="gap" if not done.get(m) else "breach")
             for r in rejected:
                 find("X-16", FAIL, j.id, f"{j.id}: {r.report_no} ({r.method}) rejected; no repair or re-examination recorded.",
                      clause("UW-51, UW-52", g.nde), f"Repair {j.id} and re-examine it.", ndocs, ev=evid(r))
@@ -720,7 +808,7 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
             ht = dossier.hydrotest
             hclause = clause(g.hydro_clause)
             if ht is None:
-                find("X-20", FAIL, "Hydrotest", "No hydrotest record.", hclause,
+                gap("X-20", FAIL, "Hydrotest", "No hydrotest record.", hclause,
                      "Upload the hydrotest record with pressure, hold time and witness.", [], ev=[])
                 test_rows.append([cell("Hydrotest", bold=True), cell(f"≥ {need:g} MPa"), cell("Not recorded", "reject"),
                                   result(FAIL)])
@@ -749,6 +837,17 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
                                     f"hydrotest per {gov_id}" + (f" {g.hydro_clause}." if g.hydro_clause else "."),
                                     ["Item", "Requirement", "Recorded", "Result"], test_rows))
 
+    # Investigation: the welds exist; a welder's qualification is a possible contributing cause, not the decision.
+    # A missing record can't be the cause of a failure: it limits what the investigation can show, so it is listed as
+    # an evidence gap (WARN) and only breaches found in the records can fail.
+    if purpose == "investigation":
+        for f in findings:
+            if f.kind == "gap":
+                f.severity = WARN if f.severity == FAIL else f.severity
+            elif f.rule_id in ("X-06", "X-07") or (f.rule_id == "X-13" and f.statement.startswith("Welder")):
+                f.severity = WARN
+                f.statement += " Recorded as a possible contributing cause."
+
     # Waivers, ordering and IDs: FAIL first, then WARN, grouped by item.
     for f in findings:
         if f.key in waivers:
@@ -770,19 +869,34 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         ("NDE performed meets the plan and the governing standard", "OPEN (PLAN)" if mode == "PLAN" else status("asb_nde")),
         ("Thickness and hydrotest meet the design", "OPEN (PLAN)" if mode == "PLAN" else status("asb_test")),
     ]
-    pending = any(v == PENDING for _, v in criteria) or bool(missing_required(present))
+    # A final set is never "incomplete": what is missing has been assessed as missing.
+    pending = not complete and (any(v == PENDING for _, v in criteria) or bool(missing_required(present)))
     verdict = conclude(findings, pending)
     note = {
         NOT_ACCEPTABLE: "Resolve every open FAIL before fabrication or release.",
-        INCOMPLETE: "Some checks are waiting on documents.",
+        INCOMPLETE: "Some checks are waiting on documents. If these are all the documents, tick “This is all the "
+                    "documents I have” and run again to assess what is missing.",
         WITH_NOTES: "No open FAIL. Warnings and waivers need the reviewer's decision and are listed in the report.",
         ACCEPTABLE: "The plan meets the requirements and fabrication may proceed. The as-built check is still open."
         if mode == "PLAN" else "The finished work matches the qualified plan.",
     }[verdict]
+    if purpose == "investigation":
+        gaps = sum(f.kind == "gap" and f.status == "open" and f.severity != INFO for f in findings)
+        gap_text = f" {gaps} evidence {'gap limits' if gaps == 1 else 'gaps limit'} what the records can show." if gaps else ""
+        note = {
+            NOT_ACCEPTABLE: "The FAIL findings are candidate causes of the failure: each is a breach of the governing "
+                            "standard found in the records." + gap_text,
+            WITH_NOTES: "No breach of the governing standard was found in the submitted records." + (
+                gap_text + " Close the gaps to rule their checks in or out." if gaps
+                else " The warnings are possible contributing causes to review."),
+            ACCEPTABLE: "The submitted records meet the governing standard; look for the cause outside the welding "
+                        "records (service conditions, design, operation).",
+        }.get(verdict, note)
 
     profile = PROFILES.get(conditions.get("profile", ""), PROFILES["plant-vessel"])
     supp_text = "".join(f" · {SUPP_BY_ID[s].label}" for s in supp)
-    basis = (f"{SECTORS[profile.sector]} · {profile.label} · {standards_phrase(gov_id, g)} ({edition}){supp_text} · "
+    basis = (f"{PURPOSES[purpose][0]} · {SECTORS[profile.sector]} · {profile.label} · "
+             f"{standards_phrase(gov_id, g)} ({edition}){supp_text} · "
              f"Design {conditions.get('design_pressure_mpa', '—')} MPa / {conditions.get('design_temp_c', '—')} °C · "
              f"MDMT {mdmt:g} °C")
     open_ = [f for f in findings if f.status == "open"]
@@ -794,6 +908,7 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         joints=len(joints), findings=findings, sections=sections, counts=counts,
         criteria=[{"label": label, "status": v,
                    "tone": {PASS: "pass", FAIL: "reject", WARN: "warn"}.get(v, "muted")} for label, v in criteria],
+        purpose=purpose, alerts=alerts,
     )
 
 

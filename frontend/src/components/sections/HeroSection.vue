@@ -4,7 +4,7 @@ import SectionLabel from '../ui/SectionLabel.vue'
 
 // Three sample runs the hero cycles through: AI reads and sorts five documents, then the rules check them.
 const HERO = [
-  { label: 'PLANT', equip: 'Pressure vessel', gov: 'ASME VIII-1 · IX · V', short: 'ASME VIII-1', supp: 'NACE MR0103', mode: 'PLAN REVIEW',
+  { label: 'PLANT', equip: 'Pressure vessel', gov: 'ASME VIII-1 · IX · V', short: 'ASME VIII-1', supp: 'NACE MR0103', mode: 'PLAN REVIEW', dwg: '/drawings/dwg-vessel.png',
     docs: [
       { slot: 'MTC', f: 'MTC_4A7721.pdf', v: 'SA-516 Gr.70 · 40 mm', ch: [['HEAT', '4A7721'], ['GRADE', 'SA-516 70'], ['T', '40 mm']] },
       { slot: 'WPS', f: 'WPS-07_PQR-07.pdf', v: 'GTAW+SMAW · PWHT', ch: [['PROC', 'GTAW+SMAW'], ['RANGE', '5–50 mm'], ['PWHT', '620 °C']] },
@@ -14,7 +14,7 @@ const HERO = [
     ],
     checks: [['Material', 'PASS'], ['PWHT', 'REQUIRED'], ['WPS', 'PASS'], ['Welder', 'PASS'], ['MR0103', 'PASS']],
     verdict: 'ACCEPTABLE', text: '40 mm exceeds 38 mm, so PWHT is required (UCS-56). WPS-07 is qualified with PWHT. Fabrication may proceed.' },
-  { label: 'SHIPBUILDING', equip: 'Hull block', gov: 'IACS Rec. 47 + ABS', short: 'IACS REC. 47', supp: 'ISO 5817 B', mode: 'AS-BUILT',
+  { label: 'SHIPBUILDING', equip: 'Hull block', gov: 'IACS Rec. 47 + ABS', short: 'IACS REC. 47', supp: 'ISO 5817 B', mode: 'AS-BUILT', dwg: '/drawings/dwg-hull.png',
     docs: [
       { slot: 'MTC', f: 'MTC_3C0954.pdf', v: 'S355J2+N · 12 mm', ch: [['HEAT', '3C0954'], ['CVN', '48 J @ -20 °C']] },
       { slot: 'WPS', f: 'WPS-09_PQR-09.pdf', v: 'FCAW · 5–20 mm', ch: [['PROC', 'FCAW'], ['RANGE', '5–20 mm']] },
@@ -24,7 +24,7 @@ const HERO = [
     ],
     checks: [['Material', 'PASS'], ['PWHT', 'N/A'], ['WPS', 'PASS'], ['Welder', 'FAIL'], ['ISO 5817', 'PASS']],
     verdict: 'NOT ACCEPTABLE', text: 'W-22 is an overhead fillet (4F). Welder 204 is qualified for flat and horizontal only.' },
-  { label: 'MANUFACTURING', equip: 'Steel frame', gov: 'AWS D1.1', short: 'AWS D1.1', supp: 'EN 1090-2 EXC3', mode: 'PLAN REVIEW',
+  { label: 'MANUFACTURING', equip: 'Steel frame', gov: 'AWS D1.1', short: 'AWS D1.1', supp: 'EN 1090-2 EXC3', mode: 'PLAN REVIEW', dwg: '/drawings/dwg-frame.png',
     docs: [
       { slot: 'MTC', f: 'MTC_7D1180.pdf', v: 'A572 Gr.50 · 16 mm', ch: [['HEAT', '7D1180'], ['CE', '0.41']] },
       { slot: 'WPS', f: 'WPS-12_PQR-12.pdf', v: 'GMAW · 3–32 mm', ch: [['PROC', 'GMAW'], ['RANGE', '3–32 mm']] },
@@ -61,7 +61,11 @@ function pick(i) {
   ht.value = 0
   start()
 }
-onMounted(start)
+onMounted(() => {
+  start()
+  // Warm the weld-map drawings so the DWG page doesn't paint blank on its first pass.
+  HERO.forEach((c) => (new Image().src = c.dwg))
+})
 onBeforeUnmount(() => clearInterval(timer))
 
 const H = computed(() => HERO[hc.value])
@@ -70,6 +74,8 @@ const docPhase = computed(() => ht.value < 15)
 const di = computed(() => (docPhase.value ? Math.floor(ht.value / 3) : 3))
 const sub = computed(() => (docPhase.value ? ht.value % 3 : 1))
 const doc = computed(() => H.value.docs[di.value])
+// The weld drawing page shows the category's sample drawing instead of placeholder text lines.
+const drawing = computed(() => (doc.value.slot === 'DWG' ? H.value.dwg : null))
 const stamped = computed(() => ht.value >= 20)
 const checksOn = computed(() => Math.max(0, Math.min(5, ht.value - 14)))
 
@@ -132,12 +138,12 @@ const verdictText = computed(() =>
       </h1>
       <p data-reveal class="m-0 max-w-[500px] text-[clamp(17px,1.4vw,19px)] leading-[1.6] text-pretty">
         Hibanako checks every joint in a welding document package against your governing code: mill certificates, WPS and PQR,
-        welder qualifications and PWHT. Run it at plan review to catch problems before the first weld, and again on the
-        as-built record before release.
+        welder qualifications and PWHT. Use it for production release, from plan review to the as-built record, or for
+        failure investigation, to find the cause in the records.
       </p>
       <div class="flex flex-wrap items-center gap-6 pt-2">
         <a href="#contact" class="btn-cta">Request a demo</a>
-        <a href="#cost" class="text-[15px] font-semibold underline-offset-4">See the cost case →</a>
+        <a href="#cost" class="text-[15px] font-semibold underline-offset-4">See how it helps →</a>
       </div>
       <span class="text-sm text-muted">
         For plant, shipbuilding and manufacturing teams. <a href="#coverage" class="font-medium">See supported codes</a>
@@ -190,10 +196,11 @@ const verdictText = computed(() =>
               <span class="font-bold">{{ docType }}</span><span class="text-faint">{{ di + 1 }} / 5</span>
             </div>
             <span class="truncate font-mono text-[11px] font-bold">{{ doc.f }}</span>
-            <div aria-hidden="true" class="flex flex-col gap-1.5 pt-0.5">
+            <div v-if="drawing" aria-hidden="true" class="drawing absolute inset-x-3 top-[58px] bottom-3" :style="{ '--dwg': `url(${drawing})` }"></div>
+            <div v-else aria-hidden="true" class="flex flex-col gap-1.5 pt-0.5">
               <span v-for="w in [92, 70, 84, 58, 76, 64]" :key="w" class="h-[5px] bg-pending/60" :style="{ width: w + '%' }"></span>
             </div>
-            <div class="mt-auto flex flex-col gap-[5px]">
+            <div class="relative mt-auto flex flex-col gap-[5px]">
               <span
                 v-for="c in doc.ch"
                 :key="c[0]"
@@ -275,5 +282,12 @@ const verdictText = computed(() =>
 }
 .chip-err {
   background: color-mix(in srgb, var(--color-reject) 7%, var(--color-white));
+}
+/* Drawing PNGs are ink-as-alpha masks, so the line work takes the theme's ink colour. */
+.drawing {
+  background: var(--color-ink);
+  opacity: 0.8;
+  -webkit-mask: var(--dwg) center top / contain no-repeat;
+  mask: var(--dwg) center top / contain no-repeat;
 }
 </style>

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import AppBar from '../components/app/AppBar.vue'
@@ -35,7 +35,11 @@ const summary = computed(
     `${countBy('all')} PROJECTS · ${countBy('open')} WITH OPEN ISSUES · ${countBy('ready')} READY FOR SIGN-OFF`,
 )
 
-const shown = computed(() => {
+// The API returns projects newest first; filter and search run over the whole list, then it is cut into pages.
+const PAGE_SIZE = 10
+const page = ref(1)
+
+const matching = computed(() => {
   const needle = q.value.trim().toLowerCase()
   return projects.value.filter(
     (p) =>
@@ -43,6 +47,16 @@ const shown = computed(() => {
       (!needle || `${p.no} ${p.name}`.toLowerCase().includes(needle)),
   )
 })
+const pages = computed(() => Math.max(1, Math.ceil(matching.value.length / PAGE_SIZE)))
+const shown = computed(() => matching.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
+const range = computed(() => {
+  const from = (page.value - 1) * PAGE_SIZE + 1
+  return `${from}–${from + shown.value.length - 1} OF ${matching.value.length}`
+})
+
+watch([filter, q], () => (page.value = 1))
+// Deleting the last row of the last page would leave an empty page.
+watch(pages, (n) => page.value > n && (page.value = n))
 
 const releaseStyle = {
   [RELEASE.NOT_READY]: { badge: 'border-reject bg-white text-reject', led: 'bg-reject' },
@@ -205,7 +219,38 @@ const onSaved = () => {
           </tbody>
         </table>
       </div>
-      <p class="m-0 font-mono text-[11px] text-faint">Click a project to open its assessment. Status reflects the last rule check.</p>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <p class="m-0 font-mono text-[11px] text-faint">Click a project to open its assessment. Status reflects the last rule check.</p>
+        <nav v-if="matching.length > PAGE_SIZE" aria-label="Pages" class="flex items-center gap-3 font-mono text-xs">
+          <span class="text-muted">{{ range }}</span>
+          <span class="flex border border-ink">
+            <button
+              type="button"
+              aria-label="Previous page"
+              class="cursor-pointer border-r border-ink bg-white px-3 py-2 disabled:cursor-default disabled:text-faint"
+              :disabled="page === 1"
+              @click="page--"
+            >← PREV</button>
+            <button
+              v-for="n in pages"
+              :key="n"
+              type="button"
+              :aria-label="`Page ${n}`"
+              :aria-current="n === page ? 'page' : undefined"
+              class="cursor-pointer border-r border-ink px-3 py-2"
+              :class="n === page ? 'bg-ink text-paper' : 'bg-white text-ink'"
+              @click="page = n"
+            >{{ n }}</button>
+            <button
+              type="button"
+              aria-label="Next page"
+              class="cursor-pointer bg-white px-3 py-2 disabled:cursor-default disabled:text-faint"
+              :disabled="page === pages"
+              @click="page++"
+            >NEXT →</button>
+          </span>
+        </nav>
+      </div>
     </main>
 
     <AppFooter />

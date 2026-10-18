@@ -64,6 +64,9 @@ async def assess_document(sessions: async_sessionmaker[AsyncSession], document_i
                 data = await storage.get(get_settings().documents_bucket, doc.storage_key)
                 parts = document_parts(doc.filename, data)
                 with ai_context(project_id=doc.project_id, document_id=doc.id):
+                    # A manual assignment is final. A slot chosen at upload is only a hint: the content decides, and
+                    # the hint is used when the content can't be placed.
+                    hint = None if doc.slot_manual else doc.slot
                     slot = doc.slot if doc.slot_manual else None
                     if slot is None:
                         guess = await classify_slot(parts)
@@ -71,11 +74,17 @@ async def assess_document(sessions: async_sessionmaker[AsyncSession], document_i
                         if not guess.legible:
                             doc.slot_reason = "OCR-01 Can't read: the image has no legible text. Upload a clear scan or PDF."
                         elif guess.slot == "none" or guess.confidence < GUESS:
-                            doc.slot_reason = f"CLS-01 Not a standard document ({guess.reason}) Assign it manually or remove it."
+                            if hint:
+                                slot = hint
+                                doc.slot_reason = f"Kept as {SLOT_NAMES[hint]}, where you uploaded it ({guess.reason})"
+                            else:
+                                doc.slot_reason = f"CLS-01 Not a standard document ({guess.reason}) Assign it manually or remove it."
                         else:
                             slot = guess.slot
                             doc.slot_reason = (guess.reason if guess.confidence >= AUTO
                                                else f"Probably a {SLOT_NAMES[slot]}: {guess.reason} Please confirm.")
+                            if hint and hint != slot:
+                                doc.slot_reason = f"Moved from {SLOT_NAMES[hint]}: {doc.slot_reason}"
                     result = await extract_slot(slot, parts) if slot in SCHEMAS else None
             rejection = intake_rejection(slot, result) if result is not None else None
             if rejection:

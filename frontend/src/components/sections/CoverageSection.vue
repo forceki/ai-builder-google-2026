@@ -28,21 +28,13 @@ const sectors = [
 
 <template>
   <section id="coverage" aria-labelledby="cov-h" class="wrap flex flex-col gap-[clamp(32px,4vw,48px)] pb-[clamp(64px,10vw,140px)]">
-    <div class="flex flex-wrap items-end justify-between gap-6">
-      <div class="flex max-w-[720px] flex-col gap-6">
-        <SectionLabel label="Coverage" />
-        <h2 id="cov-h" class="h-section text-balance">Plant, ship or shop floor. Checked to your code.</h2>
-        <p class="m-0 max-w-[600px] text-lg leading-normal text-pretty">
-          Pick where the work is used and the governing standard. Hibanako checks each WPS, WPQ and mill certificate against
-          that standard and any supplementary requirement you add.
-        </p>
-      </div>
-      <RouterLink
-        to="/projects"
-        class="inline-flex items-center gap-2 rounded-lg border border-ink/25 bg-white px-[22px] py-3.5 text-[15px] font-semibold whitespace-nowrap text-ink no-underline hover:border-ink"
-      >
-        Start an assessment →
-      </RouterLink>
+    <div class="flex max-w-[720px] flex-col gap-6">
+      <SectionLabel label="Coverage" />
+      <h2 id="cov-h" class="h-section text-balance">Plant, ship or shop floor. Checked to your code.</h2>
+      <p class="m-0 max-w-[600px] text-lg leading-normal text-pretty">
+        Pick where the work is used and the governing standard. Hibanako checks each WPS, WPQ and mill certificate against
+        that standard and any supplementary requirement you add.
+      </p>
     </div>
 
     <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] gap-4">

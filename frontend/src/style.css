@@ -2,7 +2,7 @@
 
 @theme {
   --color-ink: #111111;
-  --color-paper: #fafaf7;
+  --color-paper: #ffffff;
   --color-panel: #f1efea;
   --color-graphite: #1a1a1a;
   --color-muted: #57544e;
@@ -45,7 +45,7 @@
     --font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
   }
   html[data-page='landing']:not([data-hm-theme='dark']) {
-    --color-paper: #f7f7f7;
+    --color-paper: #ffffff;
     --color-panel: #ebebeb;
   }
   html[data-hm-theme='dark'] {
@@ -75,7 +75,7 @@
       color-scheme: light;
       --shade: 17 17 17;
       --color-ink: #111111;
-      --color-paper: #fafaf7;
+      --color-paper: #ffffff;
       --color-panel: #f1efea;
       --color-white: #ffffff;
       --color-graphite: #1a1a1a;

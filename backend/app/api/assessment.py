@@ -1,7 +1,7 @@
 import hashlib
 import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
@@ -29,6 +29,8 @@ from app.assessment.catalog import (
     catalog,
     condition_hash,
     default_conditions,
+    if_missing,
+    slot_required,
 )
 from app.assessment.dossier import SAMPLE_DOSSIER, Dossier, facts
 from app.assessment.engine import VERDICT_TONE, assess, conclude, missing_required
@@ -57,7 +59,10 @@ class ConditionsIn(BaseModel):
     design_temp_c: float = 210
     mdmt_c: float = -20
     upload_mode: Literal["single", "batch"] = "batch"
+    purpose: Literal["production", "investigation"] = "production"
     confirmed: bool = Field(default=False, description="Set when the user finishes step 1; unlocks the documents step")
+    complete_set: bool = Field(default=False, description="The submitted documents are all there is: missing evidence is "
+                               "assessed as missing (FAIL or note by risk) instead of left pending")
 
     @model_validator(mode="after")
     def _consistent(self) -> "ConditionsIn":
@@ -92,7 +97,7 @@ class WaiverIn(BaseModel):
 @dataclass
 class DocumentUpload:
     file: UploadFile
-    slot: SlotId | None = None  # put the file in this slot; omitted → sorted by content
+    slot: SlotId | None = None  # the slot it was uploaded into: a hint, the content decides
 
 
 class SortedFileOut(BaseModel):
@@ -113,6 +118,8 @@ class SlotOut(BaseModel):
     required: bool
     files: list[str]
     facts: list[str]
+    if_missing: dict | None = Field(default=None, description="What releasing without this document means under the "
+                                    "governing standard: {severity, risk, statement, clause}")
 
 
 class RunOut(BaseModel):
@@ -127,6 +134,11 @@ class RunOut(BaseModel):
     result: dict[str, Any]
     run_by: str
     created_at: datetime
+    notes: dict[str, Any] | None = None
+
+
+class NotesIn(BaseModel):
+    text: str = Field(max_length=5000)
 
 
 class AssessmentOut(BaseModel):
@@ -140,7 +152,8 @@ class AssessmentOut(BaseModel):
     missing: list[str] = Field(description="Required document slots still empty")
     unresolved: list[str] = Field(description="Rejected files that must be assigned or removed before a run")
     reading: list[str] = Field(description="Files still being read")
-    ready: bool = Field(description="Every required slot is filled, nothing is being read and no file is unresolved")
+    ready: bool = Field(description="At least one document is in, every required slot is filled, nothing is being read "
+                              "and no file is unresolved")
     state: State = Field(description="draft → ready → complete; stale when conditions or documents changed after the run")
     stale_reasons: list[str]
     run: RunOut | None = Field(description="Latest run")
@@ -176,8 +189,12 @@ async def _view(db: AsyncSession, a: Assessment) -> View:
         if d is None:
             continue
         reading = d.status in READING
+        # A file uploaded into a slot shows there while it is read (the content may still move it); batch files have
+        # no slot until they are read.
+        # Either way only a "ready" file fills its slot (View.by_slot).
         files.append(SortedFileOut(
-            name=d.filename, slot=None if reading else d.slot, reason="Reading…" if reading else (d.slot_reason or ""),
+            name=d.filename, slot=d.slot,
+            reason="Reading…" if reading else (d.slot_reason or ""),
             manual=d.slot_manual, status="reading" if reading else "failed" if d.status == DocStatus.FAILED else "ready",
             confidence=d.slot_confidence, document_id=str(d.id),
             needs_confirm=bool(not reading and d.slot and not d.slot_manual and (d.slot_confidence or 1) < AUTO)))
@@ -207,13 +224,16 @@ def _out(project: Project, a: Assessment, run: AssessmentRun | None, view: View)
             stale.append("Documents changed")
         if run.rule_pack != RULE_PACK_VERSION:
             stale.append(f"Rules updated to {RULE_PACK_VERSION}")
-    ready = not missing and not unresolved and not reading
+    # Every slot is optional: any one document is enough to run; checks without their documents stay pending.
+    ready = bool(present) and not missing and not unresolved and not reading
     state: State = ("stale" if stale else "complete") if run else ("ready" if ready else "draft")
     return AssessmentOut(
         project_no=project.no, conditions=a.conditions, condition_hash=c_hash, documents_hash=d_hash, files=view.files,
-        slots=[SlotOut(id=s.id, label=s.label, desc=s.desc, required=s.required, files=by_slot[s.id],
-                       facts=facts(view.dossier, s.id) if s.id in present and s.id != "other" else []) for s in SLOTS],
-        mode="AS-BUILT" if "asbuilt" in present else "PLAN", missing=missing, unresolved=unresolved, reading=reading,
+        slots=[SlotOut(id=s.id, label=s.label, desc=s.desc, required=slot_required(s.id, a.conditions),
+                       files=by_slot[s.id],
+                       facts=facts(view.dossier, s.id) if s.id in present and s.id != "other" else [],
+                       if_missing=asdict(im) if (im := if_missing(s.id, a.conditions)) else None) for s in SLOTS],
+        mode="AS-BUILT" if "asbuilt" in present or a.conditions.get("complete_set") else "PLAN", missing=missing, unresolved=unresolved, reading=reading,
         ready=ready, state=state, stale_reasons=stale,
         run=RunOut.model_validate(run, from_attributes=True) if run else None, sample_data=view.sample,
     )
@@ -291,7 +311,8 @@ class AssessmentController(Controller):
         self, db: AsyncSession, user: User, queue: Queue, project_no: str,
         data: Annotated[DocumentUpload, Body(media_type=RequestEncodingType.MULTI_PART)],
     ) -> AssessmentOut:
-        """Upload one document. It is sorted into a slot by content (unless a slot is given) and read in the background."""
+        """Upload one document. It is sorted into a slot by content (a slot given at upload is a hint) and read in the
+        background."""
         settings = get_settings()
         project = await get_project(db, project_no, user)
         a = await _load(db, project)
@@ -317,8 +338,8 @@ class AssessmentController(Controller):
         content_type = data.file.content_type or "application/octet-stream"
         await storage.put(settings.documents_bucket, key, content, content_type)
         doc = Document(project_id=project.id, filename=filename, content_type=content_type, size=len(content), pages=pages,
-                       storage_key=key, for_assessment=True, slot=data.slot, slot_manual=bool(data.slot),
-                       slot_reason="Assigned by you" if data.slot else None)
+                       storage_key=key, for_assessment=True, slot=data.slot, slot_manual=False,
+                       slot_reason=None)
         db.add(doc)
         await db.flush()
         a.files = [*keep, {"name": filename, "document_id": str(doc.id)}]
@@ -398,6 +419,8 @@ class AssessmentController(Controller):
             raise ClientException(f"wait until every document is read: {', '.join(state.reading)}")
         if state.missing:
             raise ClientException(f"submit the required documents first: {', '.join(state.missing)}")
+        if not any(s.files for s in state.slots):
+            raise ClientException("submit at least one document first")
         if state.unresolved:
             raise ClientException(f"assign or remove the rejected files first: {', '.join(state.unresolved)}")
         files = view.by_slot()
@@ -411,6 +434,18 @@ class AssessmentController(Controller):
         db.add(run)
         await db.flush()
         return _out(project, a, run, view)
+
+    @put("/projects/{project_no:str}/assessment/notes")
+    async def set_notes(self, db: AsyncSession, user: User, project_no: str, data: NotesIn) -> AssessmentOut:
+        """The reviewer's notes on the latest run's conclusion; empty text clears them."""
+        project = await get_project(db, project_no, user)
+        a = await _load(db, project)
+        run = await _latest_run(db, a)
+        if run is None:
+            raise ClientException("run the assessment first")
+        text = data.text.strip()
+        run.notes = {"text": text, "by": f"{user.name}, {user.role}", "at": utcnow().isoformat()} if text else None
+        return _out(project, a, run, await _view(db, a))
 
     @patch("/projects/{project_no:str}/assessment/findings/{key:str}")
     async def set_waiver(self, db: AsyncSession, user: User, project_no: str, key: str, data: WaiverIn) -> AssessmentOut:
@@ -471,4 +506,5 @@ class AssessmentController(Controller):
             project_no=project.no, project_name=project.name, prepared_by=r.run_by, conditions=r.conditions,
             documents=r.documents, result=r.result, run_number=r.number, run_at=r.created_at,
             condition_hash=r.condition_hash, rule_pack=r.rule_pack,
-        ) | {"sample_data": state.sample_data, "stale": state.state == "stale", "stale_reasons": state.stale_reasons}
+        ) | {"sample_data": state.sample_data, "stale": state.state == "stale", "stale_reasons": state.stale_reasons,
+             "notes": r.notes}

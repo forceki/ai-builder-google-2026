@@ -51,7 +51,7 @@ async def _project_out(db: AsyncSession, p: Project) -> ProjectOut:
 
 async def _list_projects(db: AsyncSession, user: User) -> list[ProjectOut]:
     projects = (await db.scalars(
-        select(Project).where(Project.owner_id == user.id).order_by(Project.updated_at.desc())
+        select(Project).where(Project.owner_id == user.id).order_by(Project.created_at.desc(), Project.no.desc())
     )).all()
     return [await _project_out(db, p) for p in projects]
 

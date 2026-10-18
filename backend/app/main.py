@@ -5,7 +5,15 @@ from litestar.config.cors import CORSConfig
 from litestar.di import Provide
 from litestar.logging.config import LoggingConfig
 
-from app.api import AiLogController, AssessmentController, AuthController, CheckController, DocumentController, ProjectController
+from app.api import (
+    AiLogController,
+    AssessmentController,
+    AuthController,
+    CheckController,
+    DemoRequestController,
+    DocumentController,
+    ProjectController,
+)
 from app.api.deps import provide_db, provide_queue, provide_user
 from app.api.events import project_events
 from app.api.tasks import run_task
@@ -40,7 +48,7 @@ async def health() -> dict[str, str]:
 app = Litestar(
     route_handlers=[
         health, AuthController, ProjectController, DocumentController, CheckController, AiLogController,
-        AssessmentController,
+        AssessmentController, DemoRequestController,
         project_events, run_task,
     ],
     on_app_init=[jwt_auth.on_app_init],

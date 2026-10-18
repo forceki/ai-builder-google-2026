@@ -160,26 +160,25 @@ released once an engineer signs the report.
 
 ## 6. Results
 
-Tested on synthetic dossiers in [`example-docs/`](example-docs/README.md), read by Gemini as-is
-with no hand corrections:
+Tested on the synthetic document sets in [`example-docs/`](example-docs/README.md): one pressure vessel, 13 documents
+in the formats of their real counterparts (EN 10204 3.1 certificates, ASME IX QW-482/483/484A forms, a shop drawing
+with weld table, and the as-built records). Read by Gemini as uploaded, with no hand corrections:
 
-| Dossier | Expected | Hibanako |
+| Set | Expected | Hibanako |
 | --- | --- | --- |
-| Clean, complete dossier | PASS | **PASS** — all four checks pass |
-| Supplier first issue with 12 planted defects | REJECT | **REJECT** — caught all 6 defects in scope of the four checks, **0 false alarms** on 5 deliberate look-alikes (e.g. `H-48213` vs `48213`, `W01` vs `W-01`) |
+| `acceptable` | ACCEPTABLE | **ACCEPTABLE** — every file sorted into its slot, no findings |
+| `not-acceptable`, 6 planted defects | NOT ACCEPTABLE | **NOT ACCEPTABLE** — all 6 defects caught |
 
-Example output for the defective dossier:
+Findings for the `not-acceptable` set:
 
-| Status | Check | Finding |
+| Rule | Item | Finding |
 | --- | --- | --- |
-| REJECT | Material traceability | Heat number conflict for part P1: 48213 (certificate) vs 48231 (fabrication record) |
-| REJECT | NDT evidence | RT-2233 rejects weld W-04 |
-| HOLD | NDT evidence | No RT report references weld W-03 |
-| HOLD | Welding-record linkage | W-03 references WPS-08, which is not in the dossier |
-| HOLD | Dossier completeness | WPS requires PWHT for W-04; no PWHT record found |
-The other 6 planted defects (expired welder qualification, welding current outside the WPS,
-drawing revision mismatch, unsigned certificate, missing hydrotest, tensile below minimum) need
-new rules, not better reading — they are the next step.
+| S-MTC-04 | 3C0954 | Heat 3C0954 tensile strength 385 MPa is below the 400 MPa minimum of SA-36 |
+| X-20 | Hydrotest | Test pressure 1.9 MPa is below 2.08 MPa (1.3 × design 1.6 MPa) |
+| X-15 | PWHT L-01 | Load L-01 held 35 min; 48 min required for 20 mm (1 h per 25 mm) |
+| X-13 | W-14 (as-built) | Welder 131 was not qualified on 06 Oct 2026 when W-14 was welded: no WPQ on file |
+| X-16 | W-15 | RT-021 (RT) rejected; no repair or re-examination recorded |
+| X-07 | W-17, W-22 | Welder 204 continuity lapsed: last use 02 Mar 2026 |
 
 ### Try it
 

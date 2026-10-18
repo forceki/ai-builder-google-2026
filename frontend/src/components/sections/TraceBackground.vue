@@ -45,7 +45,7 @@ function palette() {
   return {
     ink: (a) => `rgba(${shade},${a})`,
     solidInk: css.getPropertyValue('--color-ink').trim() || '#111111',
-    paper: css.getPropertyValue('--color-paper').trim() || '#fafaf7',
+    paper: css.getPropertyValue('--color-paper').trim() || '#ffffff',
     signal: css.getPropertyValue('--color-signal').trim() || '#ff4f00',
   }
 }

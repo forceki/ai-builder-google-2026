@@ -39,15 +39,15 @@ onBeforeUnmount(() => url.value && URL.revokeObjectURL(url.value))
         :src="url"
         :alt="`${evidence.label || evidence.file}, page ${evidence.page}`"
         class="block max-h-40 max-w-full border object-contain object-left-top"
-        :class="paper ? 'border-[#BBBBBB] bg-white' : 'border-ink/25 bg-white'"
+        :class="paper ? 'border-(--r-line) bg-white' : 'border-ink/25 bg-white'"
       />
     </a>
     <div
       v-else
       class="flex min-h-10 items-center border border-dashed px-2.5 py-1 font-mono text-[10.5px]"
-      :class="[paper ? 'border-[#BBBBBB] text-[#6E6E6E]' : 'border-ink/25 text-faint', failed ? 'text-reject' : '']"
+      :class="[paper ? 'border-(--r-line) text-(--r-muted)' : 'border-ink/25 text-faint', failed ? 'text-reject' : '']"
     >{{ isSheet(evidence.file) ? 'Spreadsheet: no page image' : failed ? `Preview failed: ${failed}` : 'Loading…' }}</div>
-    <figcaption class="font-mono text-[10px] leading-snug" :class="paper ? 'text-[#555555]' : 'text-faint'">
+    <figcaption class="font-mono text-[10px] leading-snug" :class="paper ? 'text-(--r-sub)' : 'text-faint'">
       {{ evidence.label ? `${evidence.label} · ` : '' }}{{ evidence.file }} p.{{ evidence.page }}
     </figcaption>
   </figure>

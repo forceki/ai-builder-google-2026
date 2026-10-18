@@ -121,15 +121,96 @@ class Slot:
 
 
 SLOTS: list[Slot] = [
-    Slot("mtc", "Mill certificate", "Grade, heat no., thickness, chemistry, impact test", True,
+    Slot("mtc", "Mill certificate", "Grade, heat no., thickness, chemistry, impact test", False,
          ("MTC_4A7721.pdf", "MTC_5B2210.pdf", "MTC_3C0954.pdf")),
-    Slot("wps", "WPS", "Welding procedure with its supporting PQR", True, ("WPS-07_PQR-07.pdf", "WPS-09_PQR-09.pdf")),
-    Slot("wpq", "WPQ", "Welder performance qualification and continuity log", True, ("WPQ-118.pdf", "WPQ-204.pdf")),
-    Slot("drawing", "Welding drawing", "Weld map: joints, WPS and welder assigned, NDE", True, ("HBK-PV-110_RevB_WeldMap.pdf",)),
+    Slot("wps", "WPS", "Welding procedure with its supporting PQR", False, ("WPS-07_PQR-07.pdf", "WPS-09_PQR-09.pdf")),
+    Slot("wpq", "WPQ", "Welder performance qualification and continuity log", False, ("WPQ-118.pdf", "WPQ-204.pdf")),
+    Slot("drawing", "Welding drawing", "Weld map: joints, WPS and welder assigned, NDE", False, ("HBK-PV-110_RevB_WeldMap.pdf",)),
     Slot("asbuilt", "As-built document", "Actual welders, PWHT charts, NDE done", False, ("ASB_PS-3_RevA.pdf",)),
     Slot("other", "Other documents", "Kept with the documents (e.g. a document index); not checked by the rules", False, ()),
 ]
 SLOT_IDS = [s.id for s in SLOTS]
+
+# What the assessment is for. Production: new work released for service, every welder must be qualified.
+# Investigation: the equipment is already built and something failed; the welds can't be re-made, so welder
+# qualification is background and the checks focus on material, PWHT / heat treatment, mechanical results and NDE.
+PURPOSES = {
+    "production": ("Production release", "New fabrication before it ships. Welder qualification is mandatory: without "
+                   "a WPQ the work is deemed rejected."),
+    "investigation": ("Failure investigation", "Equipment already built or in service. WPQ is optional; the checks look "
+                      "for the cause in material, PWHT and heat treatment, mechanical results and NDE."),
+}
+DEFAULT_PURPOSE = "production"
+
+
+def purpose_of(conditions: dict) -> str:
+    p = conditions.get("purpose")
+    return p if p in PURPOSES else DEFAULT_PURPOSE
+
+
+def slot_required(slot: str, conditions: dict) -> bool:
+    """Shown as REQUIRED: the WPQ in production. Missing, it raises a high alert and the run is deemed rejected."""
+    return slot == "wpq" and purpose_of(conditions) == "production"
+
+
+# Supplementary requirements that are about the material itself: without mill certificates they can't be shown.
+MATERIAL_SUPP = {"IMPACT", "MR0103", "MR0175", "LETHAL"}
+
+
+@dataclass(frozen=True)
+class IfMissing:
+    """What it means to release without a document, ranked by risk under the governing standard."""
+
+    severity: str  # FAIL blocks release · WARN is a note for the reviewer
+    risk: str  # HIGH | MEDIUM | LOW
+    statement: str
+    clause: str
+    fix: str
+
+
+def if_missing(slot: str, conditions: dict) -> IfMissing | None:
+    gov_id = conditions.get("governing") or "ASME VIII-1"
+    g = GOVERNING.get(gov_id, GOVERNING["ASME VIII-1"])
+    supp = set(conditions.get("supplementary", []))
+    if slot == "mtc":
+        needs = sorted(SUPP_BY_ID[s].label for s in supp & MATERIAL_SUPP)
+        clause = "UG-93 (material identification)" if gov_id == "ASME VIII-1" else (
+            "Material certification per " + gov_id if g.asme else "EN 10204 3.1 per " + gov_id)
+        if needs:
+            return IfMissing("FAIL", "HIGH", f"No mill certificate submitted; {', '.join(needs)} can't be shown without the "
+                             "material's test results.", clause, "Upload the EN 10204 3.1 certificates with the impact and "
+                             "chemistry results.")
+        return IfMissing("WARN", "LOW", "No mill certificate submitted; material grade, heats, P-No. and chemistry were "
+                         "taken as listed on the drawing and not verified.", clause,
+                         "Upload the EN 10204 3.1 certificates, or record why the material is accepted without them.")
+    if slot == "wps":
+        return IfMissing("FAIL", "HIGH", f"No WPS submitted; no joint can be shown to be welded to a procedure qualified "
+                         f"per {g.qual}.", "ASME IX QW-200" if g.asme else g.qual,
+                         "Upload the WPS and supporting PQR for every procedure on the weld map.")
+    if slot == "wpq":
+        if purpose_of(conditions) == "investigation":
+            return IfMissing("INFO", "LOW", "No welder qualification submitted; not needed for a failure investigation, "
+                             "the welds are already made. Welder qualification is not assessed.",
+                             "ASME IX QW-300" if g.asme else g.qual, "Add the WPQs if a welder is a suspected cause.")
+        return IfMissing("FAIL", "CRITICAL", f"HIGH ALERT: no welder qualification submitted. Production welds need "
+                         f"qualified welders per {g.qual}; the work is deemed rejected until every WPQ is provided.",
+                         "ASME IX QW-300" if g.asme else g.qual,
+                         "Upload the WPQ and continuity record of every welder on the weld map.")
+    if slot == "drawing":
+        return IfMissing("FAIL", "HIGH", "No welding drawing submitted; the joints, their WPS and welder assignments and "
+                         "the NDE extent can't be identified or verified.", f"{gov_id} weld map / QC system",
+                         "Upload the weld map or welding drawing with its weld table.")
+    if slot == "asbuilt":
+        needed = ["weld log"]
+        if g.pwht_mm or "LETHAL" in supp:
+            needed.append("PWHT records where PWHT is required")
+        needed.append(f"NDE reports ({g.nde})")
+        if g.hydro_factor:
+            needed.append(f"hydrotest record ({g.hydro_clause})")
+        return IfMissing("FAIL", "HIGH", f"No as-built record submitted; release needs the {', '.join(needed)}.",
+                         gov_id + (f" {g.hydro_clause}" if g.hydro_factor else ""),
+                         "Upload the weld log, PWHT charts, NDE reports and test records of the finished work.")
+    return None
 
 
 EDITIONS = ["2023", "2021"]  # code editions the rules are written for; the newest is the default
@@ -139,7 +220,7 @@ RULE_PACK_VERSION = "RS-3.1"
 def default_conditions() -> dict:
     return {"profile": "plant-vessel", "governing": "ASME VIII-1", "edition": EDITIONS[0], "supplementary": [],
             "design_pressure_mpa": 1.6, "design_temp_c": 210, "mdmt_c": -20, "upload_mode": "batch",
-            "confirmed": False}
+            "confirmed": False, "complete_set": False, "purpose": DEFAULT_PURPOSE}
 
 
 def condition_hash(conditions: dict) -> str:
@@ -158,6 +239,7 @@ def catalog() -> dict:
                       for k, g in GOVERNING.items()],
         "supplementary": [{**asdict(s), "sectors": list(s.sectors)} for s in SUPPLEMENTARY],
         "slots": [{**asdict(s), "sample": list(s.sample)} for s in SLOTS],
+        "purposes": [{"id": k, "label": v[0], "desc": v[1]} for k, v in PURPOSES.items()],
         "editions": EDITIONS,
         "rule_pack": RULE_PACK_VERSION,
     }

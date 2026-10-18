@@ -28,7 +28,7 @@ const money = (v) => '$' + v.toLocaleString('en-US')
 <template>
   <section id="cost" aria-labelledby="cost-h" class="wrap flex flex-col gap-[clamp(40px,5vw,64px)] pb-[clamp(64px,10vw,140px)]">
     <div class="flex max-w-[720px] flex-col gap-6">
-      <SectionLabel label="The cost case" />
+      <SectionLabel label="How Hibanako helps your project" />
       <h2 id="cost-h" class="h-section text-balance">Less time on paperwork. Fewer surprises at audit.</h2>
       <p class="m-0 max-w-[560px] text-[17px] leading-[1.5]">
         An example: one 40-joint pressure-vessel document package, about 120 files, checked by hand and checked with Hibanako.

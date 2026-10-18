@@ -40,3 +40,5 @@ class AssessmentRun(IdMixin, Base):
     result: Mapped[dict[str, Any]] = mapped_column(JSON)
     run_by: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # The reviewer's notes on this run's conclusion: {text, by, at}; printed on the report.
+    notes: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)

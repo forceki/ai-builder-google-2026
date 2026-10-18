@@ -78,9 +78,117 @@ def test_waived_fail_gives_acceptable_with_notes():
 
 
 def test_missing_document_makes_the_verdict_incomplete():
-    r = run(present={"mtc", "wps", "drawing"}, dossier=without_w22())
+    r = run(present={"mtc", "wpq", "drawing"}, dossier=without_w22())
     assert r.verdict == INCOMPLETE
-    assert section(r, "wpq").rows is None
+    assert section(r, "wps").rows is None and section(r, "wpq").rows is None
+
+
+def test_production_without_wpq_is_a_high_alert_and_deemed_rejected():
+    r = run(present={"mtc", "wps", "drawing"}, dossier=without_w22())  # production is the default purpose
+    assert r.verdict == NOT_ACCEPTABLE and r.alerts
+    f = next(f for f in r.findings if f.rule_id == "S-WPQ-00")
+    assert f.severity == FAIL and f.statement.startswith("HIGH ALERT")
+
+
+def test_investigation_does_not_need_wpq_and_weighs_welders_as_causes():
+    r = run(present={"mtc", "wps", "drawing"}, dossier=without_w22(), purpose="investigation")
+    assert r.verdict == ACCEPTABLE and not r.alerts  # nothing else is wrong; a missing WPQ is only recorded
+    assert section(r, "wpq").status == "N/A"
+    assert next(f for f in r.findings if f.rule_id == "S-WPQ-00").severity == "INFO"
+    # with the WPQs, the welder not qualified overhead (W-22) is a warning, not the decision
+    r = run(purpose="investigation")
+    assert {f.severity for f in r.findings if f.rule_id == "X-06"} == {WARN}
+
+
+def test_mill_certificate_is_optional_and_only_warns():
+    r = run(present={"wps", "wpq", "drawing"}, dossier=without_w22())
+    assert r.verdict == WITH_NOTES
+    assert [(f.rule_id, f.severity) for f in r.findings] == [("S-MTC-06", WARN)]
+    assert section(r, "mat").status == "N/A" and section(r, "pwht").rows is not None
+    r = run(present={"wps", "wpq", "drawing", "asbuilt"}, dossier=without_w22())
+    assert not any(f.rule_id == "X-14" for f in r.findings)
+
+
+def no_records(d=SAMPLE_DOSSIER):
+    return replace(d, as_built={}, pwht_charts=[], nde_reports=[], thickness=[], hydrotest=None)
+
+
+def test_final_set_assesses_missing_evidence_instead_of_waiting():
+    # not ticked: a plan review; the as-built evidence isn't asked for yet
+    r = run(present={"wps", "wpq", "drawing"}, dossier=no_records())
+    assert r.mode == "PLAN" and not {"X-15", "X-20", "S-DOC-01"} & {f.rule_id for f in r.findings}
+    # ticked: release record. PWHT is required (40 mm, P-No.1 assumed without a certificate) and was never recorded.
+    r = run(present={"wps", "wpq", "drawing"}, dossier=no_records(), complete_set=True)
+    assert r.mode == "AS-BUILT" and r.verdict == NOT_ACCEPTABLE
+    sev = {(f.rule_id, f.item): f.severity for f in r.findings}
+    assert sev[("S-MTC-06", "Mill certificates")] == WARN  # a missing certificate is a note
+    assert sev[("X-15", "W-11 (as-built)")] == FAIL and sev[("X-20", "Hydrotest")] == FAIL
+    assert sev[("S-DOC-01", "As-built document")] == FAIL
+    assert not any(f.rule_id == "X-13" for f in r.findings)  # no weld log at all: one finding, not one per joint
+
+
+def test_final_set_ranks_missing_documents_by_risk():
+    r = run(present={"mtc", "wps"}, dossier=no_records(), complete_set=True)
+    assert {f.item for f in r.findings if f.rule_id in ("S-DOC-01", "S-WPQ-00") and f.severity == FAIL} == {
+        "WPQ", "Welding drawing", "As-built document"}
+    assert r.verdict == NOT_ACCEPTABLE and all(c["status"] != "PENDING" for c in r.criteria)
+    # impact testing selected: the certificate holds the evidence, so its absence blocks release
+    r = run(present={"wps", "wpq", "drawing"}, dossier=no_records(), complete_set=True, supplementary=["IMPACT"])
+    assert next(f for f in r.findings if f.rule_id == "S-MTC-06").severity == FAIL
+
+
+def test_investigation_lists_missing_records_as_gaps_and_fails_only_breaches():
+    r = run(dossier=no_records(without_w22()), purpose="investigation", complete_set=True)
+    gaps = [f for f in r.findings if f.kind == "gap"]
+    assert gaps and all(f.severity in (WARN, "INFO") for f in gaps)  # no RT report, no PWHT record, no hydrotest
+    assert r.verdict == WITH_NOTES and "evidence gap" in r.verdict_note
+    # a record that shows a breach is still a candidate cause
+    chart = replace(SAMPLE_DOSSIER.pwht_charts[0], hold_min=20)
+    r = run(dossier=replace(no_records(without_w22()), pwht_charts=[chart]), purpose="investigation", complete_set=True)
+    assert r.verdict == NOT_ACCEPTABLE and any(f.rule_id == "X-15" and f.kind == "breach" for f in r.findings)
+    # production: the same gaps block the release
+    assert run(dossier=no_records(without_w22()), complete_set=True).verdict == NOT_ACCEPTABLE
+
+
+def test_joint_without_wps_names_the_submitted_wps_that_could_cover_it():
+    joints = [replace(j, wps=None) if j.id == "W-11" else j for j in without_w22().joints]
+    r = run(dossier=replace(SAMPLE_DOSSIER, joints=joints))
+    f = next(f for f in r.findings if f.rule_id == "S-WPS-01" and f.item == "W-11")
+    assert "assigns no WPS" in f.statement and "WPS-07" in f.statement and "WPS-09" not in f.statement  # 40 mm > 20
+
+
+def test_joint_needing_pwht_without_a_wps_does_not_crash_the_run():
+    # the real-document case: the drawing asks for PWHT but assigns no WPS, and this is the final set
+    joints = [replace(j, wps=None, pwht_required=True) for j in without_w22().joints]
+    r = run(dossier=replace(no_records(), joints=joints), complete_set=True)
+    assert r.verdict == NOT_ACCEPTABLE
+    assert not any(f.rule_id == "X-05" for f in r.findings)  # the missing WPS is S-WPS-01, not a PWHT finding
+    assert any(f.rule_id == "S-WPS-01" for f in r.findings)
+
+
+def test_unstated_pqr_hardness_is_a_gap_in_an_investigation():
+    procs = {k: replace(p, hardness_hv10=None) for k, p in SAMPLE_DOSSIER.procedures.items()}
+    r = run(dossier=replace(without_w22(), procedures=procs), supplementary=["MR0103"], purpose="investigation")
+    f = next(f for f in r.findings if f.rule_id == "X-10" and f.item == "NACE MR0103")
+    assert f.kind == "gap" and f.severity == WARN
+    # a recorded hardness above the limit is a breach, and a candidate cause
+    procs = {k: replace(p, hardness_hv10=260) for k, p in SAMPLE_DOSSIER.procedures.items()}
+    r = run(dossier=replace(without_w22(), procedures=procs), supplementary=["MR0103"], purpose="investigation")
+    assert any(f.rule_id == "X-10" and f.kind == "breach" and f.severity == FAIL for f in r.findings)
+
+
+def test_joints_are_read_from_every_drawing():
+    from app.assessment.adapter import ExtractedDoc, build_dossier
+
+    ga = {"drawing_no": "GA-1", "revision": "1", "design_pressure_mpa": 1.6, "wall_thickness_mm": 22,
+          "joints": [{"joint_id": "C#1", "description": "Shell to head", "wps": None, "page": 1, "confidence": "high"}]}
+    detail = {"drawing_no": "DT-1", "revision": "1",
+              "joints": [{"joint_id": "C#1", "wps": "WPS-150", "welder": "W12", "page": 1, "confidence": "high"},
+                         {"joint_id": "N#1", "description": "Nozzle", "wps": "WPS-138", "page": 1, "confidence": "high"}]}
+    d = build_dossier([ExtractedDoc("drawing", "ga.pdf", ga), ExtractedDoc("drawing", "detail.pdf", detail)])
+    by = {j.id: j for j in d.joints}
+    assert by["C#1"].wps == "WPS-150" and by["C#1"].desc == "Shell to head" and by["C#1"].thickness_mm == 22
+    assert by["N#1"].wps == "WPS-138" and d.drawing_no == "GA-1"
 
 
 def test_as_built_rechecks_the_actual_welder_on_the_weld_date():
@@ -232,9 +340,10 @@ def test_welder_continuity_lapses_after_six_months_x07():
 
 
 def test_basis_names_each_standard_once():
-    assert run().basis.split(" · ")[2] == "ASME VIII-1 with ASME IX and ASME V (2023)"
+    assert run().basis.split(" · ")[:1] == ["Production release"]
+    assert run().basis.split(" · ")[3] == "ASME VIII-1 with ASME IX and ASME V (2023)"
     r = run(profile="mfg-structural", governing="AWS D1.1", dossier=without_w22())
-    assert r.basis.split(" · ")[2] == "AWS D1.1 (2023)"
+    assert r.basis.split(" · ")[3] == "AWS D1.1 (2023)"
 
 
 def test_conditions_validated():
@@ -291,7 +400,9 @@ async def test_api_flow(session):
     call = lambda h, **kw: h.fn(api, db=session, user=user, project_no="PRJ-1", **kw)
 
     out = await call(AssessmentController.get_assessment)
-    assert out.state == "draft" and out.missing == ["Mill certificate", "WPS", "WPQ", "Welding drawing"]
+    assert out.state == "draft" and out.missing == [] and not out.ready  # every slot is optional, but one is needed
+    with pytest.raises(ClientException):
+        await call(AssessmentController.run)  # no document yet
 
     out = await call(AssessmentController.add_files, queue=FakeQueue(), data=FilesIn(names=["MTC_4A7721.pdf", "IMG_4471.jpg"]))
     assert [(f.name, f.slot) for f in out.files] == [("MTC_4A7721.pdf", "mtc"), ("IMG_4471.jpg", None)]
@@ -391,6 +502,19 @@ def test_intake_rejects_2_2_certificates_and_drawings_without_joints():
         "design_temp_c": None, "wall_thickness_mm": None, "pipe_od_mm": None, "general_nde": None, "joints": [],
         "page": 1, "confidence": "high"})
     assert intake_rejection("drawing", drawing).startswith("DRW-01")
+
+
+def test_drawing_pipe_od_fills_joints_only_when_the_weld_table_lists_none():
+    from app.assessment.adapter import ExtractedDoc, build_dossier
+
+    def drawing(*ods):
+        joints = [{"joint_id": f"W-{i}", "od_mm": od, "page": 1, "confidence": "high"} for i, od in enumerate(ods, 1)]
+        return [ExtractedDoc("drawing", "map.pdf", {"pipe_od_mm": 168.3, "joints": joints})]
+
+    # spool: one pipe size for every joint, given once on the drawing
+    assert [j.od_mm for j in build_dossier(drawing(None, None)).joints] == [168.3, 168.3]
+    # vessel: the table gives the nozzle's OD; the skid fillet with none is not on pipe
+    assert [j.od_mm for j in build_dossier(drawing(2440, 168.3, None)).joints] == [2440, 168.3, None]
 
 
 def test_snapshot_crops_the_box_and_keeps_the_row_label():

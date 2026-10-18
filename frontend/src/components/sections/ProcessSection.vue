@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import SectionLabel from '../ui/SectionLabel.vue'
 
 const steps = [
@@ -11,44 +11,84 @@ const steps = [
   { title: 'Report', role: 'ENGINEER', text: 'A verdict of acceptable, not acceptable or incomplete, ready for engineer sign-off.' },
 ]
 
-const docs = [
-  { id: 'MTC-3C0954', kind: 'EN 10204 3.1', title: 'Mill test certificate', page: 'p.1 / 2',
-    lines: [{ top: 80, text: 'HEAT NO. 3C0954' }, { top: 120, text: 'S355J2+N · 12 mm' }],
+// One document package from example-docs/ (vessel V-110, skid joints W-17 and W-22), shown with each of the three
+// conclusions the rules can reach. The switch replays the same walkthrough with that outcome.
+const CONDITIONS = [
+  {
+    key: 'ok', label: 'Acceptable', verdict: 'ACCEPTABLE', tone: 'pass', hot: null, issue: null,
+    mtcLine: 'SA-36 · 12 mm · SIGNED', wpqLine: 'LAST USE 2026-10-08',
+    welder: { cat: 'WPQ-204 continuity log', text: 'LAST USE 2026-10-08', stamp: 'PASS' },
+    finding: 'SUMMARY', src: 'SRC: MTC-3C0954 p.1 / HBK-PV-110 / WPQ-204 p.1',
+    explanation: 'Every check passes. W-17 (2F) and W-22 (4F) are within WPS-09, welder 204 is qualified for all fillet positions (3G + 4G test) and used FCAW 10 days ago. Ready for engineer sign-off.',
+    counts: ['6 CHECKS', '6 PASS', '0 FAIL'],
+    rows: [['Heat 3C0954 meets SA-36, EN 10204 3.1', 'PASS'], ['W-17, W-22 within WPS-09 range', 'PASS'],
+      ['Welder 204 qualified for 2F and 4F', 'PASS'], ['Welder 204 continuity: 10 days', 'PASS']],
+  },
+  {
+    key: 'notes', label: 'With notes', verdict: 'ACCEPTABLE WITH NOTES', tone: 'warn', hot: 0, issue: 'A',
+    mtcLine: 'SA-36 · 12 mm · NOT SIGNED', wpqLine: 'LAST USE 2026-10-08',
+    welder: { cat: 'WPQ-204 continuity log', text: 'LAST USE 2026-10-08', stamp: 'PASS' },
+    finding: 'FINDING 01 · WARN', src: 'SRC: MTC-3C0954 p.1, field Z03',
+    explanation: 'The certificate for heat 3C0954 has no signature from the mill’s inspection representative (EN 10204). Nothing fails; the reviewer decides: accept with a note, or request a signed copy.',
+    counts: ['6 CHECKS', '5 PASS', '1 WARN'],
+    rows: [['Heat 3C0954: certificate not signed', 'WARN'], ['Heat 3C0954 tensile 470 MPa, min. 400', 'PASS'],
+      ['W-17, W-22 within WPS-09 range', 'PASS'], ['Welder 204 qualified for 2F and 4F', 'PASS']],
+  },
+  {
+    key: 'fail', label: 'Not acceptable', verdict: 'NOT ACCEPTABLE', tone: 'reject', hot: 3, issue: 'E',
+    mtcLine: 'SA-36 · 12 mm · SIGNED', wpqLine: 'LAST USE 2026-03-02',
+    welder: { cat: 'WPQ-204 continuity log', text: 'LAST USE 03-02 · LAPSED', stamp: 'FAIL' },
+    finding: 'FINDING 01 · FAIL', src: 'SRC: WPQ-204 continuity log / HBK-PV-110 joint W-22',
+    explanation: 'Welder 204 last used FCAW on 02 Mar 2026, 230 days ago; ASME IX QW-322.1 allows 6 months. W-17 and W-22 can’t be released. Next step: a continuity record within 6 months, or requalify welder 204.',
+    counts: ['6 CHECKS', '5 PASS', '1 FAIL'],
+    rows: [['W-17, W-22: welder 204 continuity lapsed', 'FAIL'], ['Heat 3C0954 meets SA-36, EN 10204 3.1', 'PASS'],
+      ['W-17, W-22 within WPS-09 range', 'PASS'], ['Welder 204 qualified for 2F and 4F', 'PASS']],
+  },
+]
+const TONE = { pass: 'var(--color-pass)', warn: 'var(--color-signal)', reject: 'var(--color-reject)' }
+const STAMP_BG = { PASS: 'var(--color-paper)', WARN: 'var(--color-signal)', FAIL: 'var(--color-reject)' }
+
+const cond = ref(2)
+const C = computed(() => CONDITIONS[cond.value])
+
+const docs = computed(() => [
+  { id: 'MTC-3C0954', kind: 'EN 10204 3.1', title: 'Mill test certificate', page: 'p.1 / 1',
+    lines: [{ top: 80, text: 'HEAT NO. 3C0954' }, { top: 120, text: C.value.mtcLine }],
     bars: [{ top: 160, widths: [100, 80, 90, 60, 75] }] },
-  { id: 'BLK-07', kind: 'SCAN', title: 'Weld map', page: 'p.1 / 1',
-    lines: [{ top: 80, text: 'W-22 · 4F · OVERHEAD' }, { top: 140, text: 'W-17 · 2G · FLAT' }],
+  { id: 'HBK-PV-110', kind: 'A3 · REV B', title: 'Weld map', page: 'p.1 / 1',
+    lines: [{ top: 80, text: 'W-22 · 4F · FILLET' }, { top: 140, text: 'W-17 · 2F · FILLET' }],
     bars: [{ top: 108, widths: [70] }, { top: 180, widths: [100, 85, 65] }] },
-  { id: 'WPQ-204', kind: 'PDF', title: 'Welder qualification', page: 'p.1 / 1',
-    lines: [{ top: 80, text: 'WELDER 204 · 2G · F, H' }],
+  { id: 'WPQ-204', kind: 'QW-484A', title: 'Welder qualification', page: 'p.1 / 1',
+    lines: [{ top: 80, text: 'WELDER 204 · 3G + 4G' }, { top: 200, text: C.value.wpqLine }],
     bars: [{ top: 120, widths: [90, 70, 100, 55] }] },
-]
+])
 
-const nodes = [
-  { k: 'A', cat: 'MTC-3C0954 p.1', text: 'HEAT 3C0954 · 12 mm', stamp: 'PASS' },
-  { k: 'B', cat: 'BLK-07 weld table', text: 'WPS-09 · FCAW · 5–20', stamp: 'PASS' },
-  { k: 'C', cat: 'BLK-07 joint W-22', text: 'W-22 · 4F · OVERHEAD', stamp: 'FAIL' },
-  { k: 'D', cat: 'BLK-07 joint W-17', text: 'W-17 · 2G · FLAT', stamp: 'PASS' },
+const nodes = computed(() => [
+  { k: 'A', cat: 'MTC-3C0954 p.1', text: C.value.issue === 'A' ? 'HEAT 3C0954 · NOT SIGNED' : 'HEAT 3C0954 · 12 mm',
+    stamp: C.value.issue === 'A' ? 'WARN' : 'PASS' },
+  { k: 'B', cat: 'HBK-PV-110 weld table', text: 'WPS-09 · FCAW · 1.5–20', stamp: 'PASS' },
+  { k: 'C', cat: 'HBK-PV-110 joint W-22', text: 'W-22 · 4F · OVERHEAD', stamp: C.value.issue === 'E' ? 'FAIL' : 'PASS' },
+  { k: 'D', cat: 'HBK-PV-110 joint W-17', text: 'W-17 · 2F · FILLET', stamp: C.value.issue === 'E' ? 'FAIL' : 'PASS' },
   null,
-  { k: 'F', cat: 'WPQ-204 p.1', text: 'WELDER 204 · 2G', stamp: 'PASS' },
-]
-
-const rows = [
-  { n: '01', text: 'W-22: welder 204 not qualified overhead', hold: true },
-  { n: '02', text: 'Heat 3C0954 meets EN 10204 3.1' },
-  { n: '03', text: 'W-17, W-22 within WPS-09 range' },
-  { n: '04', text: 'Welder 204 qualified for W-17' },
-]
+  { k: 'F', cat: 'WPQ-204 p.1', text: 'WELDER 204 · 3G + 4G', stamp: 'PASS' },
+])
 
 const links = [
-  { d: 'M215 213 C245 213 245 213 275 213' },
-  { d: 'M450 213 C480 213 480 153 510 153' },
-  { d: 'M450 213 C480 213 480 273 510 273' },
-  { d: 'M685 153 C715 153 715 153 745 153', hot: true },
-  { d: 'M685 273 C715 273 715 273 745 273' },
+  'M215 213 C245 213 245 213 275 213',
+  'M450 213 C480 213 480 153 510 153',
+  'M450 213 C480 213 480 273 510 273',
+  'M685 153 C715 153 715 153 745 153',
+  'M685 273 C715 273 715 273 745 273',
 ]
 
-const EXPLANATION =
-  'W-22 is an overhead fillet (4F), but welder 204 is qualified for flat and horizontal only (WPQ-204). Next step: assign a welder qualified overhead, or qualify welder 204 in 4F before welding.'
+// The DOM is animated by update(); after a switch, re-render first, then re-apply the scroll position.
+const pickCondition = (i) => {
+  cond.value = i
+  nextTick(() => {
+    if (E) E.rows = [...root.value.querySelectorAll('[data-row]')]
+    update()
+  })
+}
 
 const root = ref(null)
 let E = null
@@ -177,7 +217,8 @@ function update() {
   E.callout.style.opacity = ca
   E.callout.style.transform = `translateY(${(1 - oCub(ca)) * 16}px)`
   E.conn.setAttribute('opacity', ca)
-  E.ctext.textContent = EXPLANATION.slice(0, Math.round(seg(p, 0.74, 0.83) * EXPLANATION.length))
+  const text = C.value.explanation
+  E.ctext.textContent = text.slice(0, Math.round(seg(p, 0.74, 0.83) * text.length))
 
   const rp = ioExp(seg(p, 0.86, 0.92))
   E.map.style.opacity = lerp(1, 0.14, rp)
@@ -233,8 +274,9 @@ onBeforeUnmount(() => {
   E = null
 })
 
-const stampStyle = (hold) =>
-  `position:absolute;right:-10px;top:-12px;padding:2px 7px;border:2px solid var(--color-ink);border-radius:3px;background:${hold ? 'var(--color-signal)' : 'var(--color-paper)'};font-size:10px;font-weight:700;letter-spacing:0.1em;opacity:0;`
+const badge = (stamp) => `background:${STAMP_BG[stamp]};color:${stamp === 'FAIL' ? 'var(--color-white)' : 'var(--color-ink)'};`
+const stampStyle = (stamp) =>
+  `position:absolute;right:-10px;top:-12px;padding:2px 7px;border:2px solid var(--color-ink);border-radius:3px;${badge(stamp)}font-size:10px;font-weight:700;letter-spacing:0.1em;opacity:0;`
 </script>
 
 <template>
@@ -272,6 +314,22 @@ const stampStyle = (hold) =>
             </li>
           </ol>
           <div class="flex flex-col gap-2.5 font-mono text-[11px] tracking-[0.06em]">
+            <span class="text-[10px] font-bold text-muted">SAMPLE CONCLUSION · V-110 SKID</span>
+            <div role="radiogroup" aria-label="Sample conclusion" class="flex border border-ink text-[10.5px] font-bold">
+              <button
+                v-for="(c, i) in CONDITIONS"
+                :key="c.key"
+                type="button"
+                role="radio"
+                :aria-checked="i === cond"
+                class="flex flex-1 cursor-pointer items-center justify-center gap-1.5 px-1.5 py-2 whitespace-nowrap uppercase"
+                :class="[i === cond ? 'bg-ink text-paper' : 'bg-white text-ink', i ? 'border-l border-ink' : '']"
+                @click="pickCondition(i)"
+              >
+                <span aria-hidden="true" class="size-2 flex-none rounded-full border border-ink" :style="{ background: TONE[c.tone] }"></span>
+                {{ c.label }}
+              </button>
+            </div>
             <div class="relative h-1 overflow-hidden border border-ink/30 bg-panel">
               <div data-k="bar" class="absolute inset-0 origin-left scale-x-0 bg-signal"></div>
             </div>
@@ -290,12 +348,12 @@ const stampStyle = (hold) =>
               </div>
               <svg width="960" height="600" viewBox="0 0 960 600" class="absolute top-0 left-0 overflow-visible" fill="none">
                 <path
-                  v-for="(l, i) in links"
+                  v-for="(d, i) in links"
                   :key="i"
                   data-link
-                  :d="l.d"
-                  :class="l.hot ? 'stroke-signal' : 'stroke-ink'"
-                  :stroke-width="l.hot ? 2 : 1.5"
+                  :d="d"
+                  :style="{ stroke: i === C.hot ? TONE[C.tone] : 'var(--color-ink)' }"
+                  :stroke-width="i === C.hot ? 2 : 1.5"
                 />
                 <line data-k="conn" x1="832" y1="181" x2="832" y2="340" class="stroke-ink" stroke-width="1" stroke-dasharray="3 3" opacity="0" />
                 <circle v-for="i in 5" :key="`p${i}`" data-pulse r="5" class="fill-signal stroke-ink" opacity="0" />
@@ -335,17 +393,17 @@ const stampStyle = (hold) =>
                 >
                   <span data-cat class="h-0 overflow-hidden text-[9px] tracking-[0.08em] text-muted opacity-0">{{ n.cat }}</span>
                   <span class="text-[11px] font-bold whitespace-nowrap">{{ n.text }}</span>
-                  <span :data-k="`s${n.k}`" :style="stampStyle(n.stamp === 'FAIL')">{{ n.stamp }}</span>
+                  <span :data-k="`s${n.k}`" :style="stampStyle(n.stamp)">{{ n.stamp }}</span>
                 </div>
                 <div
                   v-else
                   data-k="nE"
                   class="absolute top-[125px] left-[745px] box-border flex h-14 w-[175px] flex-col justify-center gap-[3px] rounded-[3px] px-2.5 font-mono opacity-0"
-                  style="border: 1.5px dashed var(--color-signal); background: color-mix(in srgb, var(--color-signal) 7%, var(--color-white))"
+                  :class="C.issue === 'E' ? 'node-fail' : 'node-ok'"
                 >
-                  <span class="text-[9px] tracking-[0.08em] text-muted">WPQ-204 · F, H ONLY</span>
-                  <span class="text-[11px] font-bold whitespace-nowrap">NO 4F QUALIFIED WELDER</span>
-                  <span data-k="sE" :style="stampStyle(true)">FAIL</span>
+                  <span class="text-[9px] tracking-[0.08em] text-muted">{{ C.welder.cat }}</span>
+                  <span class="text-[11px] font-bold whitespace-nowrap">{{ C.welder.text }}</span>
+                  <span data-k="sE" :style="stampStyle(C.welder.stamp)">{{ C.welder.stamp }}</span>
                 </div>
               </template>
 
@@ -356,10 +414,10 @@ const stampStyle = (hold) =>
               >
                 <div class="flex items-center justify-between font-mono text-[10px] tracking-[0.08em]">
                   <span class="font-bold">EXPLANATION</span>
-                  <span class="text-muted">FINDING 01</span>
+                  <span :style="{ color: TONE[C.tone] }">{{ C.finding }}</span>
                 </div>
                 <p data-k="ctext" class="m-0 min-h-[66px] font-read text-[15px] leading-[1.5]"></p>
-                <div class="font-mono text-[10px] text-muted">SRC: BLK-07 joint W-22 / WPQ-204 p.1</div>
+                <div class="font-mono text-[10px] text-muted">{{ C.src }}</div>
               </div>
             </div>
 
@@ -371,24 +429,25 @@ const stampStyle = (hold) =>
               <div class="flex items-start justify-between gap-3">
                 <div class="flex flex-col gap-[3px]">
                   <span class="font-sans text-xl font-black">Welding assessment</span>
-                  <span class="text-[10px] text-muted">HBK-2026-041 · BLK-07 HULL BLOCK</span>
+                  <span class="text-[10px] text-muted">HBK-2026-041 · V-110 SKID</span>
                 </div>
                 <span
                   data-k="rstamp"
-                  class="inline-block rounded-[3px] border-2 border-ink bg-signal px-2.5 py-[5px] text-[12px] font-bold tracking-[0.08em] whitespace-nowrap opacity-0 outline outline-1 outline-offset-2 outline-ink"
-                >NOT ACCEPTABLE</span>
+                  class="inline-block max-w-[150px] rounded-[3px] border-2 border-ink px-2.5 py-[5px] text-center text-[12px] leading-[1.25] font-bold tracking-[0.08em] opacity-0 outline outline-1 outline-offset-2 outline-ink"
+                  :style="{ background: TONE[C.tone], color: C.tone === 'warn' ? 'var(--color-ink)' : 'var(--color-white)' }"
+                >{{ C.verdict }}</span>
               </div>
-              <div class="flex gap-4 border-y border-ink py-2 text-[11px]"><span>6 CHECKS</span><span>5 PASS</span><span>1 FAIL</span></div>
+              <div class="flex gap-4 border-y border-ink py-2 text-[11px]"><span v-for="c in C.counts" :key="c">{{ c }}</span></div>
               <div
-                v-for="row in rows"
-                :key="row.n"
+                v-for="(row, i) in C.rows"
+                :key="i"
                 data-row
                 class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2.5 border-b border-dashed border-ink/30 pb-2.5 opacity-0"
               >
-                <span class="text-[11px] text-muted">{{ row.n }}</span>
-                <span class="font-sans text-sm font-bold">{{ row.text }}</span>
-                <span class="rounded-[3px] border-2 border-ink px-[7px] py-0.5 text-[10px] font-bold" :class="row.hold ? 'bg-signal' : ''">
-                  {{ row.hold ? 'FAIL' : 'PASS' }}
+                <span class="text-[11px] text-muted">0{{ i + 1 }}</span>
+                <span class="font-sans text-sm font-bold">{{ row[0] }}</span>
+                <span class="rounded-[3px] border-2 border-ink px-[7px] py-0.5 text-[10px] font-bold" :style="badge(row[1])">
+                  {{ row[1] }}
                 </span>
               </div>
               <div data-row class="flex flex-col gap-1.5 pt-1 text-[10px] text-muted opacity-0">
@@ -409,3 +468,14 @@ const stampStyle = (hold) =>
     </div>
   </section>
 </template>
+
+<style scoped>
+.node-fail {
+  border: 1.5px dashed var(--color-reject);
+  background: color-mix(in srgb, var(--color-reject) 7%, var(--color-white));
+}
+.node-ok {
+  border: 1.5px solid var(--color-ink);
+  background: var(--color-white);
+}
+</style>

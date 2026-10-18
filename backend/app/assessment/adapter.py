@@ -272,28 +272,49 @@ def build_dossier(docs: list[ExtractedDoc]) -> Dossier:
                              sources=tuple(r["sources"]), evidence=r["evidence"])
                 for jid, r in rows.items()}
 
-    # Joints come from the weld map; anything it does not say is filled from the as-built record of that weld.
+    # Joints come from every drawing submitted: a GA may list the joints and a detail sheet or weld map assign their WPS,
+    # welder and thickness. A joint on several sheets takes each value from the first sheet that states it. Anything
+    # no sheet says is filled from the as-built record of that weld. The header (number, revision) comes from the
+    # first sheet with a weld table.
+    drawings = sorted(by["drawing"], key=lambda d: not d.data.get("joints"))
+    drawing = drawings[0].data if drawings else {}
+    drawing_file = drawings[0].filename if drawings else ""
+    sheet_value = lambda key: next((d.data.get(key) for d in drawings if d.data.get(key) is not None), None)
+    merged: dict[str, tuple[dict, dict, str]] = {}  # joint → (its fields, the sheet that listed it first, file)
+    for d in drawings:
+        for dj in d.data.get("joints", []):
+            jid = norm_id(dj["joint_id"])
+            if jid not in merged:
+                merged[jid] = (dict(dj), d.data, d.filename)
+                continue
+            have = merged[jid][0]
+            for k, v in dj.items():
+                if k == "pwht_required":
+                    have[k] = bool(have.get(k)) or bool(v)
+                elif have.get(k) in (None, "", []) and v not in (None, "", []):
+                    have[k] = v
+    # The drawing-wide pipe OD fills joints only when the weld tables give no OD per joint (a spool of one pipe size).
+    # Once a table lists ODs, a blank one means the joint is not on pipe (a plate seam or a structural fillet).
+    general_od = None if any(dj.get("od_mm") for dj, _, _ in merged.values()) else sheet_value("pipe_od_mm")
     joints: list[Joint] = []
-    drawing = by["drawing"][0].data if by["drawing"] else {}
-    drawing_file = by["drawing"][0].filename if by["drawing"] else ""
-    for dj in drawing.get("joints", []):
-        jid = norm_id(dj["joint_id"])
+    for jid, (dj, sheet, file) in merged.items():
         a = as_built.get(jid)
         heats = a.heats if a else ()
         heat = next((h for h in heats if h in materials), heats[0] if heats else None)
         pwht_by_wps = any(jid in p.pwht_joints for p in procedures.values())
         joints.append(Joint(
             id=jid, desc=dj.get("description") or "", heat=heat,
-            thickness_mm=dj.get("thickness_mm") or drawing.get("wall_thickness_mm") or (materials[heat].thickness_mm if heat in materials else None),
-            od_mm=dj.get("od_mm") or drawing.get("pipe_od_mm"), position=(dj.get("position") or "").upper() or None,
+            thickness_mm=dj.get("thickness_mm") or sheet.get("wall_thickness_mm") or sheet_value("wall_thickness_mm")
+            or (materials[heat].thickness_mm if heat in materials else None),
+            od_mm=dj.get("od_mm") or general_od, position=(dj.get("position") or "").upper() or None,
             kind=dj.get("kind") or "groove", wps=norm_id(dj.get("wps")) or (a.wps if a else None),
             welder=norm_welder(dj.get("welder")) or (a.welder if a else None), pressure=True,
-            nde=_nde_text(dj.get("nde")) or _nde_text(drawing.get("general_nde")), heats=heats,
-            pwht_required=True if dj.get("pwht_required") or pwht_by_wps else None,
-            evidence=_evs(drawing_file, dj, f"{jid} on the weld map")))
+            nde=_nde_text(dj.get("nde")) or _nde_text(sheet.get("general_nde")) or _nde_text(sheet_value("general_nde")),
+            heats=heats, pwht_required=True if dj.get("pwht_required") or pwht_by_wps else None,
+            evidence=_evs(file, dj, f"{jid} on the weld map")))
 
     return Dossier(materials=list(materials.values()), procedures=procedures, welders=welders, joints=joints,
                    as_built=as_built, pwht_charts=pwht, nde_reports=nde, thickness=thickness, hydrotest=hydro,
                    drawing_no=drawing.get("drawing_no"), drawing_rev=drawing.get("revision"),
-                   design_pressure_mpa=drawing.get("design_pressure_mpa"),
+                   design_pressure_mpa=sheet_value("design_pressure_mpa"),
                    drawing_evidence=_ev(drawing_file, drawing, "Drawing title block") if drawing else None)

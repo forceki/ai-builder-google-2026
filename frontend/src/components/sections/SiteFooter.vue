@@ -3,9 +3,6 @@ import PoweredBy from '../ui/PoweredBy.vue'
 import BrandStamp from '../ui/BrandStamp.vue'
 
 const links = [
-  { label: 'Process', href: '#process' },
-  { label: 'Checks', href: '#checks' },
-  { label: 'Principles', href: '#principles' },
   { label: 'Contact', href: '#contact' },
   { label: 'Terms', to: '/terms' },
   { label: 'Privacy', to: '/privacy' },

@@ -89,6 +89,7 @@ function update() {
     step = st
     E.steps.forEach((li, i) => {
       li.style.opacity = i === st ? 1 : i < st ? 0.7 : 0.4
+      li.toggleAttribute('data-active', i === st)
       const num = li.querySelector('[data-num]')
       num.style.background = i === st ? 'var(--color-signal)' : i < st ? 'var(--color-ink)' : 'var(--color-white)'
       num.style.color = i < st ? 'var(--color-paper)' : 'var(--color-ink)'
@@ -248,14 +249,14 @@ const stampStyle = (hold) =>
 
     <div data-k="flow" aria-label="Animated walkthrough of the Hibanako process" class="relative h-[720vh]">
       <div
-        class="sticky flex flex-wrap overflow-hidden border-y border-ink bg-paper"
+        class="sticky flex flex-col overflow-hidden border-y md:flex-row border-ink bg-paper"
         style="top: var(--site-header-h, 0px); height: calc(100vh - var(--site-header-h, 0px))"
       >
         <aside
-          class="box-border flex max-w-[400px] min-w-0 flex-[1_1_300px] flex-col justify-between gap-5 border-r border-ink bg-paper px-[clamp(20px,3vw,32px)] py-[clamp(20px,3vw,36px)]"
+          class="box-border flex min-w-0 flex-none flex-col justify-between gap-3 border-b border-ink bg-paper px-[clamp(20px,3vw,32px)] py-4 md:max-w-[400px] md:flex-[1_1_300px] md:gap-5 md:border-r md:border-b-0 md:py-[clamp(20px,3vw,36px)]"
         >
-          <ol class="m-0 flex list-none flex-col gap-1.5 p-0">
-            <li v-for="(s, i) in steps" :key="s.title" :data-step="i" class="flex flex-col gap-2 py-2" :style="{ opacity: i ? 0.4 : 1 }">
+          <ol class="m-0 flex list-none flex-col gap-1.5 p-0 max-md:min-h-[136px]">
+            <li v-for="(s, i) in steps" :key="s.title" :data-step="i" :data-active="i ? null : ''" class="flex flex-col gap-2 py-2 max-md:[&:not([data-active])]:hidden" :style="{ opacity: i ? 0.4 : 1 }">
               <div class="flex items-center gap-3">
                 <span
                   data-num
@@ -279,7 +280,7 @@ const stampStyle = (hold) =>
           </div>
         </aside>
 
-        <div data-k="wrap" class="relative min-h-[55vh] min-w-0 flex-[3_1_520px] overflow-hidden bg-paper">
+        <div data-k="wrap" class="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-paper md:flex-[3_1_520px]">
           <div data-k="stage" class="absolute top-0 left-0 h-[600px] w-[960px] origin-top-left">
             <canvas data-k="dots" width="1920" height="1200" class="absolute top-0 left-0 h-[600px] w-[960px]"></canvas>
 

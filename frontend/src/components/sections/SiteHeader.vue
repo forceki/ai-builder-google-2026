@@ -8,6 +8,7 @@ const store = useStore()
 const signedIn = computed(() => store.getters['auth/signedIn'])
 
 const scrolled = ref(false)
+const open = ref(false)
 const bar = ref(null)
 const onScroll = () => (scrolled.value = window.scrollY > 8)
 let sizer = null
@@ -39,10 +40,30 @@ const nav = [
     class="sticky top-0 z-40 border-b bg-paper transition-[padding,border-color] duration-200"
     :class="scrolled ? 'border-ink py-0' : 'border-transparent py-2'"
   >
-  <header class="wrap flex flex-wrap items-center justify-between gap-x-8 gap-y-3 py-3">
+  <header class="wrap flex flex-wrap items-center justify-between gap-x-4 gap-y-3 py-3 lg:gap-x-8">
     <BrandMark :to="{ path: '/', hash: '#top' }" />
 
-    <nav aria-label="Primary" class="flex flex-wrap gap-x-7 gap-y-1.5 font-mono text-[13px]">
+    <button
+      type="button"
+      class="flex size-10 items-center justify-center rounded border border-ink lg:hidden"
+      :aria-expanded="open"
+      aria-controls="site-menu"
+      aria-label="Menu"
+      @click="open = !open"
+    >
+      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" class="stroke-ink" stroke-width="2">
+        <path v-if="open" d="M3 1l12 12M15 1L3 13" />
+        <path v-else d="M0 1h18M0 7h18M0 13h18" />
+      </svg>
+    </button>
+
+    <div
+      id="site-menu"
+      class="w-full flex-col gap-5 border-t border-ink pt-4 pb-2 lg:contents"
+      :class="open ? 'flex' : 'hidden'"
+      @click="(e) => e.target.closest('a') && (open = false)"
+    >
+    <nav aria-label="Primary" class="flex flex-col gap-3 font-mono text-[15px] lg:flex-row lg:flex-wrap lg:gap-x-7 lg:gap-y-1.5 lg:text-[13px]">
       <a v-for="item in nav" :key="item.href" :href="item.href" class="flex gap-1.5 no-underline hover:underline">
         <span class="text-muted">{{ item.num }}</span>{{ item.label }}
       </a>
@@ -52,12 +73,7 @@ const nav = [
       <ThemeToggle />
       <RouterLink v-if="signedIn" to="/projects" class="font-mono text-[13px] underline-offset-4">Projects →</RouterLink>
       <RouterLink v-else to="/login" class="font-mono text-[13px] underline-offset-4">Log in</RouterLink>
-      <a
-        href="#contact"
-        class="inline-flex items-center gap-2.5 rounded bg-graphite px-4 py-[11px] font-mono text-xs font-bold tracking-[0.08em] text-paper uppercase no-underline shadow-[inset_0_-3px_0_#000] hover:text-paper active:translate-y-0.5 active:shadow-[inset_0_-1px_0_#000]"
-      >
-        <span aria-hidden="true" class="size-[7px] rounded-full bg-signal"></span>Request demo
-      </a>
+    </div>
     </div>
   </header>
   </div>

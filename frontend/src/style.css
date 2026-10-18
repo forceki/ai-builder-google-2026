@@ -2,8 +2,8 @@
 
 @theme {
   --color-ink: #111111;
-  --color-paper: #edeae3;
-  --color-panel: #f5f3ee;
+  --color-paper: #fafaf7;
+  --color-panel: #f1efea;
   --color-graphite: #1a1a1a;
   --color-muted: #57544e;
   --color-pending: #cfcbc2;
@@ -32,6 +32,10 @@
     scroll-behavior: smooth;
     scroll-padding-top: 96px;
   }
+  html[data-page='landing']:not([data-hm-theme='dark']) {
+    --color-paper: #f7f7f7;
+    --color-panel: #ebebeb;
+  }
   html[data-hm-theme='dark'] {
     color-scheme: dark;
     --shade: 236 236 236;
@@ -59,8 +63,8 @@
       color-scheme: light;
       --shade: 17 17 17;
       --color-ink: #111111;
-      --color-paper: #edeae3;
-      --color-panel: #f5f3ee;
+      --color-paper: #fafaf7;
+      --color-panel: #f1efea;
       --color-white: #ffffff;
       --color-graphite: #1a1a1a;
       --color-muted: #57544e;

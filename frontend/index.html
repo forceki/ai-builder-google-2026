@@ -3,16 +3,59 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hibanako — Weld quality assurance for when trust matters</title>
-    <meta name="description" content="Hibanako verifies welding documents against your governing code (mill certificates, WPS and PQR, welder qualifications and PWHT) at plan review and before release, with every finding traced to its source." />
+    <title>Hibanako — AI Weld Quality Documentation & Traceability</title>
+    <meta name="description" content="Hibanako uses Google Gemini to read welding documents (mill certificates, WPS and PQR, welder qualifications, PWHT and NDT reports) and checks every weld against your governing code." />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://hibanako.web.app/" />
     <meta name="application-name" content="Hibanako" />
+    <meta name="author" content="Hibanako" />
     <meta name="theme-color" content="#EDEAE3" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Hibanako" />
-    <meta property="og:title" content="Hibanako — Weld quality assurance for when trust matters" />
-    <meta property="og:description" content="Heat number to NDT report. Verified. Hibanako (from 火花, hibana: spark) traces every weld back to its material and forward to its inspection." />
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="Hibanako — Weld quality assurance for when trust matters" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="https://hibanako.web.app/" />
+    <meta property="og:title" content="Hibanako — AI Weld Quality Documentation & Traceability" />
+    <meta property="og:description" content="Heat number to NDT report. Verified. Hibanako traces every weld back to its material and forward to its inspection, and checks it against your code." />
+    <meta property="og:image" content="https://hibanako.web.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Hibanako — AI weld quality documentation and traceability" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Hibanako — AI Weld Quality Documentation & Traceability" />
+    <meta name="twitter:description" content="Heat number to NDT report. Verified. Hibanako traces every weld back to its material and forward to its inspection." />
+    <meta name="twitter:image" content="https://hibanako.web.app/og-image.png" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://hibanako.web.app/#org",
+            "name": "Hibanako",
+            "url": "https://hibanako.web.app/",
+            "logo": "https://hibanako.web.app/icon-512.png"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://hibanako.web.app/#site",
+            "name": "Hibanako",
+            "url": "https://hibanako.web.app/",
+            "publisher": { "@id": "https://hibanako.web.app/#org" }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "Hibanako",
+            "url": "https://hibanako.web.app/",
+            "applicationCategory": "BusinessApplication",
+            "applicationSubCategory": "Quality management",
+            "operatingSystem": "Web",
+            "description": "AI-assisted weld quality documentation and traceability. Reads mill certificates, WPS and PQR, welder qualifications, PWHT charts and NDT reports with Google Gemini and checks every weld against ASME, AWS and ISO codes with deterministic rules.",
+            "image": "https://hibanako.web.app/og-image.png",
+            "publisher": { "@id": "https://hibanako.web.app/#org" }
+          }
+        ]
+      }
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
@@ -24,6 +67,15 @@
   </head>
   <body>
     <div id="app"></div>
+    <noscript>
+      <h1>Hibanako — AI weld quality documentation and traceability</h1>
+      <p>
+        Hibanako reads welding documents (mill certificates, WPS and PQR, welder qualifications, PWHT charts and NDT
+        reports) with Google Gemini and checks every weld against your governing code, at plan review and before release.
+        Every finding is traced to the page it came from.
+      </p>
+      <p><a href="/login">Log in</a> · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a></p>
+    </noscript>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

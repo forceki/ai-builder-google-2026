@@ -27,7 +27,6 @@ onBeforeUnmount(() => {
 })
 
 const nav = [
-  { label: 'Cost', href: '#cost' },
   { label: 'Process', href: '#process' },
   { label: 'Checks', href: '#checks' },
   { label: 'Principles', href: '#principles' },

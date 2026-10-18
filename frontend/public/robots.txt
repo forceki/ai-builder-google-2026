@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /projects
+Disallow: /api/
+
+Sitemap: https://hibanako.web.app/sitemap.xml

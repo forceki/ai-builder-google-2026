@@ -1,15 +1,23 @@
 import hashlib
 import json
+import uuid
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from litestar import Controller, delete, get, patch, post, put
+from litestar.datastructures import UploadFile
+from litestar.enums import RequestEncodingType
 from litestar.exceptions import ClientException, NotFoundException
+from litestar.params import Body
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import storage
+from app.ai.inputs import UnreadableFile, page_count
 from app.api.deps import get_project
+from app.assessment.adapter import ExtractedDoc, build_dossier
 from app.assessment.catalog import (
     EDITIONS,
     GOVERNING,
@@ -22,15 +30,21 @@ from app.assessment.catalog import (
     condition_hash,
     default_conditions,
 )
-from app.assessment.dossier import SAMPLE_DOSSIER, facts
+from app.assessment.dossier import SAMPLE_DOSSIER, Dossier, facts
 from app.assessment.engine import VERDICT_TONE, assess, conclude, missing_required
+from app.assessment.intake import AUTO
 from app.assessment.report import build_report
 from app.assessment.sorting import sort_file
-from app.models import Assessment, AssessmentRun, Project, User
+from app.config import get_settings
+from app.models import Assessment, AssessmentRun, Document, Project, User
 from app.models._common import utcnow
+from app.models.document import DocStatus
+from app.queue import ASSESS_DOCUMENT, Queue
 
-SlotId = Literal["mtc", "wps", "wpq", "drawing", "asbuilt"]
+SlotId = Literal["mtc", "wps", "wpq", "drawing", "asbuilt", "other"]
 State = Literal["draft", "ready", "complete", "stale"]
+UPLOAD_TYPES = {".pdf", ".jpg", ".jpeg", ".png", ".webp", ".xlsx", ".xlsm"}
+READING = (DocStatus.QUEUED, DocStatus.READING)
 
 
 class ConditionsIn(BaseModel):
@@ -74,11 +88,21 @@ class WaiverIn(BaseModel):
     reason: str = Field(default="", max_length=1000)
 
 
+@dataclass
+class DocumentUpload:
+    file: UploadFile
+    slot: SlotId | None = None  # put the file in this slot; omitted → sorted by content
+
+
 class SortedFileOut(BaseModel):
     name: str
     slot: str | None
     reason: str
     manual: bool = False
+    status: Literal["reading", "ready", "failed"] = "ready"
+    confidence: float | None = None
+    needs_confirm: bool = Field(default=False, description="Sorted with 0.5–0.85 confidence; the user should confirm")
+    document_id: str | None = Field(default=None, description="Uploaded file; null for a sample file name")
 
 
 class SlotOut(BaseModel):
@@ -114,20 +138,52 @@ class AssessmentOut(BaseModel):
     mode: Literal["PLAN", "AS-BUILT"]
     missing: list[str] = Field(description="Required document slots still empty")
     unresolved: list[str] = Field(description="Rejected files that must be assigned or removed before a run")
-    ready: bool = Field(description="Every required slot is filled and no file is unresolved, so the rules can run")
+    reading: list[str] = Field(description="Files still being read")
+    ready: bool = Field(description="Every required slot is filled, nothing is being read and no file is unresolved")
     state: State = Field(description="draft → ready → complete; stale when conditions or documents changed after the run")
     stale_reasons: list[str]
     run: RunOut | None = Field(description="Latest run")
-    sample_data: bool = Field(description="True while results come from the sample dossier rather than extracted documents")
+    sample_data: bool = Field(description="True while results come from the sample dossier rather than uploaded documents")
 
 
-def _by_slot(files: list[dict]) -> dict[str, list[str]]:
-    return {s: [f["name"] for f in files if f.get("slot") == s] for s in SLOT_IDS}
+@dataclass
+class View:
+    """The assessment's files resolved against their uploaded documents, and the dossier read from them."""
+
+    files: list[SortedFileOut]
+    dossier: Dossier
+    sample: bool
+
+    def by_slot(self) -> dict[str, list[str]]:
+        return {s: [f.name for f in self.files if f.slot == s and f.status == "ready"] for s in SLOT_IDS}
+
+    def documents_hash(self) -> str:
+        key = sorted((f.slot or "", f.name, f.document_id or "", f.status) for f in self.files)
+        return hashlib.sha256(json.dumps(key).encode()).hexdigest()[:12]
 
 
-def _documents_hash(files: list[dict]) -> str:
-    key = sorted((f.get("slot") or "", f["name"]) for f in files)
-    return hashlib.sha256(json.dumps(key).encode()).hexdigest()[:12]
+async def _view(db: AsyncSession, a: Assessment) -> View:
+    ids = [uuid.UUID(f["document_id"]) for f in a.files if f.get("document_id")]
+    docs = {d.id: d for d in (await db.scalars(select(Document).where(Document.id.in_(ids)))).all()} if ids else {}
+    files: list[SortedFileOut] = []
+    extracted: list[ExtractedDoc] = []
+    for f in a.files:
+        if not f.get("document_id"):
+            files.append(SortedFileOut(**f))
+            continue
+        d = docs.get(uuid.UUID(f["document_id"]))
+        if d is None:
+            continue
+        reading = d.status in READING
+        files.append(SortedFileOut(
+            name=d.filename, slot=None if reading else d.slot, reason="Reading…" if reading else (d.slot_reason or ""),
+            manual=d.slot_manual, status="reading" if reading else "failed" if d.status == DocStatus.FAILED else "ready",
+            confidence=d.slot_confidence, document_id=str(d.id),
+            needs_confirm=bool(not reading and d.slot and not d.slot_manual and (d.slot_confidence or 1) < AUTO)))
+        if not reading and d.slot and d.extraction is not None:
+            extracted.append(ExtractedDoc(d.slot, d.filename, d.extraction))
+    sample = not ids
+    return View(files, SAMPLE_DOSSIER if sample else build_dossier(extracted), sample)
 
 
 async def _latest_run(db: AsyncSession, a: Assessment) -> AssessmentRun | None:
@@ -135,12 +191,13 @@ async def _latest_run(db: AsyncSession, a: Assessment) -> AssessmentRun | None:
                            .order_by(AssessmentRun.number.desc()).limit(1))
 
 
-def _out(project: Project, a: Assessment, run: AssessmentRun | None) -> AssessmentOut:
-    by_slot = _by_slot(a.files)
+def _out(project: Project, a: Assessment, run: AssessmentRun | None, view: View) -> AssessmentOut:
+    by_slot = view.by_slot()
     present = {s for s, names in by_slot.items() if names}
     missing = missing_required(present)
-    unresolved = [f["name"] for f in a.files if not f.get("slot")]
-    c_hash, d_hash = condition_hash(a.conditions), _documents_hash(a.files)
+    unresolved = [f.name for f in view.files if not f.slot and f.status != "reading"]
+    reading = [f.name for f in view.files if f.status == "reading"]
+    c_hash, d_hash = condition_hash(a.conditions), view.documents_hash()
     stale = []
     if run:
         if run.condition_hash != c_hash:
@@ -149,16 +206,15 @@ def _out(project: Project, a: Assessment, run: AssessmentRun | None) -> Assessme
             stale.append("Documents changed")
         if run.rule_pack != RULE_PACK_VERSION:
             stale.append(f"Rules updated to {RULE_PACK_VERSION}")
-    ready = not missing and not unresolved
+    ready = not missing and not unresolved and not reading
     state: State = ("stale" if stale else "complete") if run else ("ready" if ready else "draft")
     return AssessmentOut(
-        project_no=project.no, conditions=a.conditions, condition_hash=c_hash, documents_hash=d_hash,
-        files=[SortedFileOut(**f) for f in a.files],
+        project_no=project.no, conditions=a.conditions, condition_hash=c_hash, documents_hash=d_hash, files=view.files,
         slots=[SlotOut(id=s.id, label=s.label, desc=s.desc, required=s.required, files=by_slot[s.id],
-                       facts=facts(SAMPLE_DOSSIER, s.id) if s.id in present else []) for s in SLOTS],
-        mode="AS-BUILT" if "asbuilt" in present else "PLAN", missing=missing, unresolved=unresolved, ready=ready,
-        state=state, stale_reasons=stale, run=RunOut.model_validate(run, from_attributes=True) if run else None,
-        sample_data=True,
+                       facts=facts(view.dossier, s.id) if s.id in present and s.id != "other" else []) for s in SLOTS],
+        mode="AS-BUILT" if "asbuilt" in present else "PLAN", missing=missing, unresolved=unresolved, reading=reading,
+        ready=ready, state=state, stale_reasons=stale,
+        run=RunOut.model_validate(run, from_attributes=True) if run else None, sample_data=view.sample,
     )
 
 
@@ -172,7 +228,7 @@ async def _load(db: AsyncSession, project: Project) -> Assessment:
 
 
 async def _state(db: AsyncSession, project: Project, a: Assessment) -> AssessmentOut:
-    return _out(project, a, await _latest_run(db, a))
+    return _out(project, a, await _latest_run(db, a), await _view(db, a))
 
 
 def _add(files: list[dict], entries: list[dict]) -> list[dict]:
@@ -182,6 +238,15 @@ def _add(files: list[dict], entries: list[dict]) -> list[dict]:
         out = [f for f in out if not (f["name"] == e["name"] and (f.get("slot") in (e["slot"], None)))]
         out.append(e)
     return out
+
+
+async def _drop_documents(db: AsyncSession, entries: list[dict]) -> None:
+    """Delete the document rows of removed entries; stored objects are kept, as for project documents."""
+    for f in entries:
+        if f.get("document_id"):
+            doc = await db.get(Document, uuid.UUID(f["document_id"]))
+            if doc is not None:
+                await db.delete(doc)
 
 
 def _apply_waivers(result: dict, waivers: dict) -> dict:
@@ -220,16 +285,77 @@ class AssessmentController(Controller):
         a.conditions = data.model_dump()
         return await _state(db, project, a)
 
-    @post("/projects/{project_no:str}/assessment/files")
-    async def add_files(self, db: AsyncSession, user: User, project_no: str, data: FilesIn) -> AssessmentOut:
-        """Sort files into slots by name, or put them in the given slot (manual assignment)."""
+    @post("/projects/{project_no:str}/assessment/documents")
+    async def upload_document(
+        self, db: AsyncSession, user: User, queue: Queue, project_no: str,
+        data: Annotated[DocumentUpload, Body(media_type=RequestEncodingType.MULTI_PART)],
+    ) -> AssessmentOut:
+        """Upload one document. It is sorted into a slot by content (unless a slot is given) and read in the background."""
+        settings = get_settings()
         project = await get_project(db, project_no, user)
         a = await _load(db, project)
-        if data.slot:
-            entries = [{"name": n, "slot": data.slot, "reason": "Assigned by you", "manual": True} for n in data.names]
-        else:
-            entries = [{"name": s.name, "slot": s.slot, "reason": s.reason, "manual": False} for s in map(sort_file, data.names)]
-        a.files = _add(a.files, entries)
+        filename = data.file.filename or "upload"
+        suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        # Sample file names give way to real documents; an upload with the same name replaces the earlier one.
+        keep = [f for f in a.files if (f.get("document_id") or f.get("uploaded")) and f["name"] != filename]
+        await _drop_documents(db, [f for f in a.files if f.get("document_id") and f["name"] == filename])
+        if suffix not in UPLOAD_TYPES:
+            a.files = [*keep, {"name": filename, "slot": None, "manual": False, "uploaded": True,
+                               "reason": f"FMT-01 Unsupported format ({suffix or 'no extension'}). Upload PDF, JPG, PNG or XLSX."}]
+            return await _state(db, project, a)
+        content = await data.file.read()
+        if len(content) > settings.max_upload_mb * 1024 * 1024:
+            raise ClientException(f"{filename} exceeds {settings.max_upload_mb} MB")
+        try:
+            pages = page_count(filename, content)
+        except UnreadableFile:
+            a.files = [*keep, {"name": filename, "slot": None, "manual": False, "uploaded": True,
+                               "reason": "OCR-01 Can't read: the file is not a readable PDF. Upload a clear scan or PDF."}]
+            return await _state(db, project, a)
+        key = storage.new_key(project.no, filename)
+        content_type = data.file.content_type or "application/octet-stream"
+        await storage.put(settings.documents_bucket, key, content, content_type)
+        doc = Document(project_id=project.id, filename=filename, content_type=content_type, size=len(content), pages=pages,
+                       storage_key=key, for_assessment=True, slot=data.slot, slot_manual=bool(data.slot),
+                       slot_reason="Assigned by you" if data.slot else None)
+        db.add(doc)
+        await db.flush()
+        a.files = [*keep, {"name": filename, "document_id": str(doc.id)}]
+        await db.commit()  # the reader must see the row before it picks up the job
+        await queue.enqueue(ASSESS_DOCUMENT, str(doc.id))
+        return await _state(db, project, a)
+
+    @post("/projects/{project_no:str}/assessment/files")
+    async def add_files(self, db: AsyncSession, user: User, queue: Queue, project_no: str, data: FilesIn) -> AssessmentOut:
+        """Sort sample file names by name, or put files in the given slot (manual assignment or confirmation).
+
+        For an uploaded document, assigning a different slot reads it again with that slot's schema."""
+        project = await get_project(db, project_no, user)
+        a = await _load(db, project)
+        uploaded = {f["name"]: f for f in a.files if f.get("document_id")}
+        reread: list[str] = []
+        names = [n for n in data.names if n not in uploaded]
+        for name in (n for n in data.names if n in uploaded):
+            if not data.slot:
+                continue
+            doc = await db.get(Document, uuid.UUID(uploaded[name]["document_id"]))
+            if doc is None:
+                continue
+            same = doc.slot == data.slot and doc.extraction is not None
+            doc.slot, doc.slot_manual, doc.slot_reason = data.slot, True, "Assigned by you"
+            if not same:
+                doc.status, doc.extraction = DocStatus.QUEUED, None
+                reread.append(str(doc.id))
+        if names:
+            if data.slot:
+                entries = [{"name": n, "slot": data.slot, "reason": "Assigned by you", "manual": True} for n in names]
+            else:
+                entries = [{"name": s.name, "slot": s.slot, "reason": s.reason, "manual": False} for s in map(sort_file, names)]
+            a.files = _add(a.files, entries)
+        if reread:
+            await db.commit()
+            for doc_id in reread:
+                await queue.enqueue(ASSESS_DOCUMENT, doc_id)
         return await _state(db, project, a)
 
     @delete("/projects/{project_no:str}/assessment/files", status_code=200)
@@ -241,15 +367,21 @@ class AssessmentController(Controller):
             raise ClientException(f"unknown slot {slot!r}")
         project = await get_project(db, project_no, user)
         a = await _load(db, project)
-        a.files = [f for f in a.files
-                   if not ((name is None or f["name"] == name) and (slot is None or f.get("slot") == slot))]
+        view = await _view(db, a)
+        slot_of = {(f.name, f.document_id): f.slot for f in view.files}
+        gone = [f for f in a.files if (name is None or f["name"] == name)
+                and (slot is None or slot_of.get((f["name"], f.get("document_id"))) == slot)]
+        await _drop_documents(db, gone)
+        a.files = [f for f in a.files if f not in gone]
         return await _state(db, project, a)
 
     @post("/projects/{project_no:str}/assessment/samples")
     async def load_samples(self, db: AsyncSession, user: User, project_no: str, data: SamplesIn) -> AssessmentOut:
         project = await get_project(db, project_no, user)
         a = await _load(db, project)
-        slots = [s for s in SLOTS if data.slot in (None, s.id)]
+        if any(f.get("document_id") or f.get("uploaded") for f in a.files):
+            raise ClientException("this assessment has uploaded documents; remove them before loading the samples")
+        slots = [s for s in SLOTS if data.slot in (None, s.id) and s.sample]
         a.files = _add([f for f in a.files if f.get("slot") not in {s.id for s in slots}],
                        [{"name": n, "slot": s.id, "reason": "Sample document", "manual": False} for s in slots for n in s.sample])
         return await _state(db, project, a)
@@ -259,13 +391,16 @@ class AssessmentController(Controller):
         """Run the rules on the current conditions and documents and store the result."""
         project = await get_project(db, project_no, user)
         a = await _load(db, project)
-        state = await _state(db, project, a)
+        view = await _view(db, a)
+        state = _out(project, a, None, view)
+        if state.reading:
+            raise ClientException(f"wait until every document is read: {', '.join(state.reading)}")
         if state.missing:
             raise ClientException(f"submit the required documents first: {', '.join(state.missing)}")
         if state.unresolved:
             raise ClientException(f"assign or remove the rejected files first: {', '.join(state.unresolved)}")
-        files = _by_slot(a.files)
-        result = assess(a.conditions, files, SAMPLE_DOSSIER, waivers=a.waivers)
+        files = view.by_slot()
+        result = assess(a.conditions, files, view.dossier, waivers=a.waivers)
         number = (await db.scalar(select(func.max(AssessmentRun.number)).where(AssessmentRun.assessment_id == a.id))) or 0
         run = AssessmentRun(
             assessment_id=a.id, number=number + 1, condition_hash=state.condition_hash, documents_hash=state.documents_hash,
@@ -274,7 +409,7 @@ class AssessmentController(Controller):
         )
         db.add(run)
         await db.flush()
-        return _out(project, a, run)
+        return _out(project, a, run, view)
 
     @patch("/projects/{project_no:str}/assessment/findings/{key:str}")
     async def set_waiver(self, db: AsyncSession, user: User, project_no: str, key: str, data: WaiverIn) -> AssessmentOut:
@@ -294,7 +429,7 @@ class AssessmentController(Controller):
         a.waivers = waivers
         run.result = _apply_waivers(run.result, waivers)
         run.conclusion = run.result["verdict"]
-        return _out(project, a, run)
+        return _out(project, a, run, await _view(db, a))
 
     @get("/projects/{project_no:str}/assessment/report")
     async def get_report(self, db: AsyncSession, user: User, project_no: str) -> dict[str, Any]:
@@ -309,4 +444,4 @@ class AssessmentController(Controller):
             project_no=project.no, project_name=project.name, prepared_by=r.run_by, conditions=r.conditions,
             documents=r.documents, result=r.result, run_number=r.number, run_at=r.created_at,
             condition_hash=r.condition_hash, rule_pack=r.rule_pack,
-        ) | {"sample_data": True, "stale": state.state == "stale", "stale_reasons": state.stale_reasons}
+        ) | {"sample_data": state.sample_data, "stale": state.state == "stale", "stale_reasons": state.stale_reasons}

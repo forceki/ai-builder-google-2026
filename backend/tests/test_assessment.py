@@ -132,6 +132,13 @@ def test_hydrotest_and_thickness():
     assert sev == {("X-19", FAIL), ("X-20", FAIL), ("X-20", WARN)}  # 1.9 < 1.3 × 1.6 MPa; no witness is a WARN
 
 
+def test_weld_in_log_but_not_on_weld_map():
+    log = {**SAMPLE_DOSSIER.as_built, "W-30": replace(SAMPLE_DOSSIER.as_built["W-11"], sources=("Weld_log.xlsx",))}
+    r = run(present=ALL, dossier=replace(SAMPLE_DOSSIER, as_built=log))
+    f = next(f for f in r.findings if f.item == "W-30 (as-built)")
+    assert f.rule_id == "X-13" and f.documents[0] == "Weld_log.xlsx"
+
+
 def test_wps_used_differs_from_plan_without_deviation():
     log = {**SAMPLE_DOSSIER.as_built, "W-11": replace(SAMPLE_DOSSIER.as_built["W-11"], wps="WPS-09")}
     r = run(present=ALL, dossier=replace(SAMPLE_DOSSIER, as_built=log))
@@ -256,6 +263,14 @@ def test_sort_by_file_name(name, slot):
     assert sort_file(name).slot == slot
 
 
+class FakeQueue:
+    def __init__(self) -> None:
+        self.jobs: list[tuple[str, tuple]] = []
+
+    async def enqueue(self, job: str, *args: str, delay: int = 0) -> None:
+        self.jobs.append((job, args))
+
+
 @pytest.fixture
 async def session():
     engine = create_async_engine("sqlite+aiosqlite://")
@@ -278,7 +293,7 @@ async def test_api_flow(session):
     out = await call(AssessmentController.get_assessment)
     assert out.state == "draft" and out.missing == ["Mill certificate", "WPS", "WPQ", "Welding drawing"]
 
-    out = await call(AssessmentController.add_files, data=FilesIn(names=["MTC_4A7721.pdf", "IMG_4471.jpg"]))
+    out = await call(AssessmentController.add_files, queue=FakeQueue(), data=FilesIn(names=["MTC_4A7721.pdf", "IMG_4471.jpg"]))
     assert [(f.name, f.slot) for f in out.files] == [("MTC_4A7721.pdf", "mtc"), ("IMG_4471.jpg", None)]
     out = await call(AssessmentController.load_samples, data=SamplesIn())
     assert out.unresolved == ["IMG_4471.jpg"] and not out.ready
@@ -317,3 +332,65 @@ async def test_api_flow(session):
 
     out = await call(AssessmentController.run)  # the waiver follows the finding into the re-run
     assert out.state == "complete" and out.run.number == 2 and out.run.conclusion == WITH_NOTES
+
+
+async def test_upload_reads_documents_and_runs_on_them(session, monkeypatch):
+    from litestar.datastructures import UploadFile
+
+    from app import storage
+    from app.api.assessment import DocumentUpload
+    from app.models import Document
+    from app.models.document import DocStatus
+
+    async def put(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(storage, "put", put)
+    user = User(email="qe@b.com", name="QE", role="Quality engineer", password_hash="-")
+    session.add(user)
+    await session.flush()
+    session.add(Project(no="PRJ-2", name="Spool", owner_id=user.id))
+    await session.flush()
+    api, queue = AssessmentController(owner=None), FakeQueue()
+    call = lambda h, **kw: h.fn(api, db=session, user=user, project_no="PRJ-2", **kw)
+
+    await call(AssessmentController.load_samples, data=SamplesIn())
+    out = await call(AssessmentController.upload_document, queue=queue,
+                     data=DocumentUpload(file=UploadFile("application/pdf", "Notes.docx", file_data=b"x")))
+    assert [(f.name, f.slot, f.reason[:6]) for f in out.files] == [("Notes.docx", None, "FMT-01")]  # samples gave way
+
+    out = await call(AssessmentController.upload_document, queue=queue,
+                     data=DocumentUpload(file=UploadFile("image/png", "MTC_1.png", file_data=b"png")))
+    assert out.reading == ["MTC_1.png"] and not out.ready and queue.jobs[-1][0] == "assess_document"
+
+    doc = await session.get(Document, __import__("uuid").UUID(out.files[-1].document_id))
+    doc.status, doc.slot, doc.slot_confidence, doc.slot_reason = DocStatus.EXTRACTED, "mtc", 0.7, "Probably a mill certificate"
+    doc.extraction = {"heats": [{"heat_no": "H-48213", "spec_grade": "ASTM A106 Gr.B", "cert_type": "EN 10204 3.1",
+                                 "chemistry": [], "signed": True, "page": 1, "confidence": "high"}]}
+    await session.flush()
+    out = await call(AssessmentController.get_assessment)
+    mtc = next(f for f in out.files if f.name == "MTC_1.png")
+    assert mtc.slot == "mtc" and mtc.needs_confirm and not out.sample_data
+    assert next(s for s in out.slots if s.id == "mtc").facts == ["48213 · ASTM A106 Gr.B · ? · P-No.1"]
+
+    out = await call(AssessmentController.add_files, queue=queue, data=FilesIn(names=["MTC_1.png"], slot="mtc"))
+    assert not next(f for f in out.files if f.name == "MTC_1.png").needs_confirm  # confirmed without re-reading
+    out = await call(AssessmentController.add_files, queue=queue, data=FilesIn(names=["MTC_1.png"], slot="wps"))
+    assert out.reading == ["MTC_1.png"]  # a different slot reads it again with that schema
+    out = await call(AssessmentController.remove_files, name="MTC_1.png", slot=None)
+    assert out.files[0].name == "Notes.docx" and await session.get(Document, doc.id) is None
+
+
+def test_intake_rejects_2_2_certificates_and_drawings_without_joints():
+    from app.assessment.extraction import DrawingDoc, MtcDoc
+    from app.assessment.intake import intake_rejection
+
+    mtc = MtcDoc.model_validate({"heats": [{"heat_no": "9Z0001", "cert_type": "EN 10204 2.2", "certificate_no": None,
+        "spec_grade": None, "product": None, "thickness_mm": None, "condition": None, "yield_mpa": None,
+        "tensile_mpa": None, "tensile_min_mpa": None, "impact_temp_c": None, "impact_avg_j": None, "hardness": None,
+        "signed": True, "page": 1, "confidence": "high"}]})
+    assert intake_rejection("mtc", mtc).startswith("MTC-01")
+    drawing = DrawingDoc.model_validate({"drawing_no": "X", "revision": "A", "code": None, "design_pressure_mpa": None,
+        "design_temp_c": None, "wall_thickness_mm": None, "pipe_od_mm": None, "general_nde": None, "joints": [],
+        "page": 1, "confidence": "high"})
+    assert intake_rejection("drawing", drawing).startswith("DRW-01")

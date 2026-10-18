@@ -166,11 +166,6 @@ const printReport = () => window.print()
               </div>
               <p class="mt-2 mb-0 text-[10pt] leading-[1.55]">{{ rep.conclusion }}</p>
 
-              <h2 class="h-band mt-[22px]">Limitations</h2>
-              <ol class="m-0 pl-[18px] text-[9.5pt] leading-[1.55]">
-                <li v-for="l in rep.limitations" :key="l">{{ l }}</li>
-              </ol>
-
               <h2 class="h-band mt-[22px]">Comments and Assumptions</h2>
               <p class="m-0 text-[9.5pt] leading-[1.55]">{{ rep.comments }}</p>
 

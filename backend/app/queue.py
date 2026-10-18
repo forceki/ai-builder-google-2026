@@ -13,6 +13,7 @@ log = logging.getLogger(__name__)
 PROCESS_DOCUMENT = "process_document"
 SETTLE_CHECKS = "settle_checks"
 RUN_CHECKS = "run_checks"
+ASSESS_DOCUMENT = "assess_document"
 
 Runner = Callable[[str, list[str]], Awaitable[None]]
 

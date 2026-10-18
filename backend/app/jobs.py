@@ -12,6 +12,7 @@ from app.ai.classify import classify
 from app.ai.extract import extract, needs_review
 from app.ai.inputs import document_parts
 from app.ai.usage import ai_context
+from app.assessment.intake import assess_document
 from app.config import get_settings
 from app.events import publish
 from app.models import CheckRun, Document
@@ -19,7 +20,7 @@ from app.models._common import utcnow
 from app.models.check import RunStatus
 from app.models.document import DocStatus, DocType
 from app.pipeline.run import execute_run
-from app.queue import PROCESS_DOCUMENT, RUN_CHECKS, SETTLE_CHECKS, Queue
+from app.queue import ASSESS_DOCUMENT, PROCESS_DOCUMENT, RUN_CHECKS, SETTLE_CHECKS, Queue
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ PENDING = (DocStatus.QUEUED, DocStatus.READING)
 async def process_document(sessions: Sessions, queue: Queue, document_id: str) -> None:
     async with sessions() as session:
         doc = await session.get(Document, uuid.UUID(document_id))
-        if doc is None or doc.status not in PENDING:
+        if doc is None or doc.for_assessment or doc.status not in PENDING:
             return
         doc.status = DocStatus.READING
         doc.error = None
@@ -103,7 +104,12 @@ async def run_checks(sessions: Sessions, queue: Queue, run_id: str) -> None:
         await execute_run(session, run, notify=notify)
 
 
-JOBS = {PROCESS_DOCUMENT: process_document, SETTLE_CHECKS: settle_checks, RUN_CHECKS: run_checks}
+async def assess_document_job(sessions: Sessions, queue: Queue, document_id: str) -> None:
+    await assess_document(sessions, document_id)
+
+
+JOBS = {PROCESS_DOCUMENT: process_document, SETTLE_CHECKS: settle_checks, RUN_CHECKS: run_checks,
+        ASSESS_DOCUMENT: assess_document_job}
 
 
 async def run_job(sessions: Sessions, queue: Queue, job: str, args: list[str]) -> None:
@@ -112,15 +118,15 @@ async def run_job(sessions: Sessions, queue: Queue, job: str, args: list[str]) -
 
 async def resume_pending(sessions: Sessions, queue: Queue) -> None:
     async with sessions() as session:
-        docs = (await session.scalars(select(Document.id).where(Document.status.in_(PENDING)))).all()
+        docs = (await session.execute(select(Document.id, Document.for_assessment).where(Document.status.in_(PENDING)))).all()
         runs = (await session.scalars(
             select(CheckRun).where(CheckRun.status.in_([RunStatus.QUEUED, RunStatus.RUNNING]))
         )).all()
         for run in runs:
             run.status = RunStatus.QUEUED
         await session.commit()
-    for doc_id in docs:
-        await queue.enqueue(PROCESS_DOCUMENT, str(doc_id))
+    for doc_id, for_assessment in docs:
+        await queue.enqueue(ASSESS_DOCUMENT if for_assessment else PROCESS_DOCUMENT, str(doc_id))
     for run in runs:
         await queue.enqueue(RUN_CHECKS, str(run.id))
     if docs or runs:

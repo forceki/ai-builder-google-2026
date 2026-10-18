@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api/client'
 import AppBar from '../components/app/AppBar.vue'
@@ -105,25 +105,36 @@ const head = computed(() => {
 
 // Documents
 const no = () => projectNo.value
-const fileNames = (list) => Array.from(list || []).map((f) => f.name)
 const addFiles = (names, slot) => names.length && call(() => api.assessment.addFiles(no(), names, slot))
+// Real files are uploaded one by one; the backend sorts each by content and reads it in the background.
+const uploadFiles = (list, slot) => Array.from(list || []).forEach((file) => call(() => api.assessment.upload(no(), file, slot)))
+const uploaded = computed(() => !st.value.sample_data)
+let poll = null
+watch(
+  () => st.value?.reading.length,
+  (n) => {
+    clearTimeout(poll)
+    if (n) poll = setTimeout(() => call(() => api.assessment.get(no())), 2500)
+  },
+)
+onBeforeUnmount(() => clearTimeout(poll))
 const loadSample = (slot) => call(() => api.assessment.loadSamples(no(), slot))
 const removeFiles = (q) => call(() => api.assessment.removeFiles(no(), q))
 const onSlotFile = (slot, e) => {
-  addFiles(fileNames(e.target.files), slot)
+  uploadFiles(e.target.files, slot)
   e.target.value = ''
 }
 const drag = ref(false)
 const onDrop = (e) => {
   drag.value = false
-  addFiles(fileNames(e.dataTransfer?.files))
+  uploadFiles(e.dataTransfer?.files)
 }
 const onBatch = (e) => {
-  addFiles(fileNames(e.target.files))
+  uploadFiles(e.target.files)
   e.target.value = ''
 }
 const slotLabel = (id) => st.value.slots.find((s) => s.id === id)?.label ?? id
-const rejected = computed(() => st.value.files.filter((f) => !f.slot))
+const rejected = computed(() => st.value.files.filter((f) => !f.slot && f.status !== 'reading'))
 const clearRejected = () => rejected.value.forEach((f) => removeFiles({ name: f.name }))
 
 // Running stores a new run on the server; the review always shows the latest run.
@@ -175,6 +186,7 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
     <main v-else class="mx-auto box-border flex w-full max-w-[1180px] flex-1 flex-col gap-6 px-6 pt-9 pb-12 max-sm:px-4">
       <section class="flex flex-wrap items-end justify-between gap-5">
         <div class="flex min-w-0 flex-col gap-2.5">
+          <RouterLink to="/projects" class="mb-2 self-start font-mono text-xs font-bold tracking-[0.06em] underline-offset-4 print:hidden">← ALL PROJECTS</RouterLink>
           <span class="font-mono text-[11px] tracking-[0.08em] text-faint">{{ head[0] }}</span>
           <h1 class="m-0 text-[clamp(30px,4vw,44px)] leading-[1.02] font-extrabold tracking-[-0.03em]">{{ head[1] }}</h1>
           <span class="max-w-[64ch] text-[15px] leading-[1.45] text-muted">{{ head[2] }}</span>
@@ -341,7 +353,7 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
                 : 'As-built document added. The report will verify the finished work against the plan.' }}
             </span>
           </span>
-          <button type="button" class="btn-hard bg-white px-3 py-2 text-[11.5px] whitespace-nowrap" @click="loadSample()">Load all samples</button>
+          <button v-if="!uploaded" type="button" class="btn-hard bg-white px-3 py-2 text-[11.5px] whitespace-nowrap" @click="loadSample()">Load all samples</button>
         </div>
         <p v-if="st.unresolved.length" role="status" class="m-0 border border-reject bg-white px-[18px] py-3 text-[14px] text-reject">
           {{ st.unresolved.length }} rejected {{ st.unresolved.length > 1 ? 'files need' : 'file needs' }} a decision before the
@@ -368,7 +380,7 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
           </label>
           <template v-if="st.files.length">
             <div class="flex flex-wrap items-center justify-between gap-2 border-b border-ink/15 px-4 py-2.5 font-mono text-[11px] font-bold tracking-[0.05em]">
-              <span>{{ st.files.length - rejected.length }} OF {{ st.files.length }} IDENTIFIED</span>
+              <span>{{ st.reading.length ? `READING ${st.reading.length} OF ${st.files.length}…` : `${st.files.length - rejected.length} OF ${st.files.length} IDENTIFIED` }}</span>
               <span class="flex gap-3.5">
                 <span v-if="rejected.length" class="text-reject">{{ rejected.length }} {{ rejected.length > 1 ? 'ERRORS' : 'ERROR' }}</span>
                 <button
@@ -384,28 +396,40 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
                 v-for="(b, i) in st.files"
                 :key="`${b.name}:${b.slot}`"
                 class="animate-row-in flex flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-ink/15 px-4 py-2.5"
-                :class="!b.slot ? 'row-err shadow-[inset_3px_0_0_var(--color-reject)]' : 'bg-white'"
+                :class="b.status === 'reading' ? 'bg-white' : !b.slot ? 'row-err shadow-[inset_3px_0_0_var(--color-reject)]' : b.needs_confirm ? 'bg-white shadow-[inset_3px_0_0_var(--color-signal)]' : 'bg-white'"
                 :style="{ animationDelay: `${Math.min(i, 12) * 40}ms` }"
               >
-                <span aria-hidden="true" class="size-[9px] flex-none border border-ink" :class="b.slot ? 'bg-pass' : 'bg-reject'"></span>
+                <span
+                  aria-hidden="true"
+                  class="size-[9px] flex-none border border-ink"
+                  :class="b.status === 'reading' ? 'animate-pulse bg-pending' : !b.slot ? 'bg-reject' : b.needs_confirm ? 'bg-signal' : 'bg-pass'"
+                ></span>
                 <span class="flex min-w-0 flex-[1_1_200px] flex-col gap-[3px]">
                   <span class="truncate font-mono text-[12.5px]">{{ b.name }}</span>
-                  <span class="text-[12.5px] leading-[1.35]" :class="b.slot ? 'text-muted' : 'text-reject'">{{ b.reason }}</span>
+                  <span class="text-[12.5px] leading-[1.35]" :class="b.slot || b.status === 'reading' ? 'text-muted' : 'text-reject'">
+                    {{ b.reason }}<template v-if="b.confidence != null && b.status !== 'reading' && !b.manual"> · {{ Math.round(b.confidence * 100) }}% sure</template>
+                  </span>
                 </span>
+                <button
+                  v-if="b.needs_confirm"
+                  type="button"
+                  class="btn-hard flex-none bg-white px-2.5 py-1 text-[11px] uppercase"
+                  @click="addFiles([b.name], b.slot)"
+                >Confirm</button>
                 <select
-                  v-if="!b.slot"
+                  v-if="(!b.slot || b.needs_confirm) && b.status !== 'reading'"
                   :aria-label="`Assign ${b.name} to a slot`"
                   value=""
                   class="flex-none cursor-pointer rounded-none border border-ink bg-white px-2 py-1.5 text-[13px]"
                   @change="$event.target.value && addFiles([b.name], $event.target.value)"
                 >
-                  <option value="">Assign manually…</option>
+                  <option value="">{{ b.slot ? 'Change slot…' : 'Assign manually…' }}</option>
                   <option v-for="s in st.slots" :key="s.id" :value="s.id">{{ s.label }}</option>
                 </select>
                 <span
                   class="flex-none font-mono text-[10.5px] font-bold tracking-[0.06em]"
-                  :class="b.slot ? 'text-pass' : 'text-reject'"
-                >{{ b.slot ? `→ ${slotLabel(b.slot).toUpperCase()}` : 'ERROR' }}</span>
+                  :class="b.status === 'reading' ? 'text-faint' : !b.slot ? 'text-reject' : b.needs_confirm ? 'text-signal' : 'text-pass'"
+                >{{ b.status === 'reading' ? 'READING' : b.slot ? `→ ${slotLabel(b.slot).toUpperCase()}` : 'ERROR' }}</span>
                 <button
                   type="button"
                   :aria-label="`Remove ${b.name}`"
@@ -420,7 +444,7 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
             type="button"
             class="mx-4 my-3 cursor-pointer self-start border-0 bg-transparent p-0 text-[13.5px] underline underline-offset-[3px]"
             @click="addFiles(SAMPLE_BATCH)"
-          >Try a sample batch (12 files, 4 with errors)</button>
+          >Try a sample batch (12 file names, 4 with errors; no real reading)</button>
         </section>
 
         <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-4">
@@ -452,13 +476,13 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
                 Upload<input type="file" multiple class="absolute size-px opacity-0" @change="onSlotFile(s.id, $event)" />
               </label>
               <button
-                v-if="!s.files.length"
+                v-if="!s.files.length && !uploaded && s.id !== 'other'"
                 type="button"
                 class="cursor-pointer border-0 bg-transparent p-0 text-[13.5px] underline underline-offset-[3px]"
                 @click="loadSample(s.id)"
               >Use sample</button>
               <button
-                v-else
+                v-else-if="s.files.length"
                 type="button"
                 class="cursor-pointer border-0 bg-transparent p-0 text-[13.5px] text-muted underline underline-offset-[3px]"
                 @click="removeFiles({ slot: s.id })"

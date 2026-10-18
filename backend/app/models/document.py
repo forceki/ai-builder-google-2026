@@ -2,7 +2,7 @@ import uuid
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -44,5 +44,12 @@ class Document(IdMixin, TimestampMixin, Base):
     status: Mapped[DocStatus] = mapped_column(String(16), default=DocStatus.QUEUED)
     extraction: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     error: Mapped[str | None] = mapped_column(Text, default=None)
+
+    # Welding assessment intake (app.assessment): the slot the file was sorted into, and why.
+    for_assessment: Mapped[bool] = mapped_column(Boolean, default=False)
+    slot: Mapped[str | None] = mapped_column(String(16), default=None)  # mtc, wps, wpq, drawing, asbuilt, other; None = rejected
+    slot_confidence: Mapped[float | None] = mapped_column(Float, default=None)
+    slot_reason: Mapped[str | None] = mapped_column(Text, default=None)
+    slot_manual: Mapped[bool] = mapped_column(Boolean, default=False)  # assigned or confirmed by the user
 
     project: Mapped["Project"] = relationship(back_populates="documents")  # noqa: F821

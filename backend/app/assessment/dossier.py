@@ -1,6 +1,7 @@
 """The data an assessment runs on: materials, procedures, welder qualifications, joints and as-built records.
 
-Until extraction fills these from uploaded documents, every assessment uses SAMPLE_DOSSIER (made-up demo data).
+Built from the extracted documents (app.assessment.adapter); SAMPLE_DOSSIER is the made-up demo data used when a
+project has only sample file names. Any value a document did not state is None, and the rules treat it as missing.
 """
 
 from dataclasses import dataclass, field
@@ -10,29 +11,37 @@ from datetime import date
 @dataclass(frozen=True)
 class Material:
     heat: str
-    spec: str
-    p_no: str
-    thickness_mm: float
-    condition: str
-    cert_type: str  # EN 10204 type, e.g. "3.1"
+    spec: str | None
+    p_no: str | None  # from the spec via QW/QB-422; None for non-ASME grades
+    thickness_mm: float | None
+    condition: str | None
+    cert_type: str | None  # EN 10204 type, e.g. "3.1"
     chemistry: dict[str, float]  # C, Mn, Cr, Mo, V, Ni, Cu in wt%
     impact_temp_c: float | None = None
     impact_j: float | None = None
+    tensile_mpa: float | None = None
+    tensile_min_mpa: float | None = None
+    signed: bool | None = None
+    source: str | None = None  # file the record was read from
 
 
 @dataclass(frozen=True)
 class Procedure:  # WPS with its supporting PQR
     id: str
-    pqr: str
+    pqr: str | None
     processes: tuple[str, ...]
-    p_no: str
-    t_min_mm: float
-    t_max_mm: float
+    p_no: str | None
+    t_min_mm: float | None
+    t_max_mm: float | None
     pwht: str | None  # qualified PWHT cycle, None = qualified without PWHT
-    preheat_c: float
-    hardness_hv10: float
-    impact_temp_c: float
+    preheat_c: float | None
+    hardness_hv10: float | None
+    impact_temp_c: float | None
     pwht_band_c: tuple[float, float] | None = None  # qualified soak temperature range
+    current_a: tuple[float, float] | None = None  # qualified welding current range
+    pwht_joints: tuple[str, ...] = ()  # PWHT limited to these joints, empty = every joint welded to this WPS
+    revision: str | None = None
+    source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -46,23 +55,28 @@ class WelderQual:  # WPQ
     fillet: tuple[str, ...]
     t_max_mm: float | None
     od_min_mm: float | None
-    last_weld: date
+    last_weld: date | None  # last use of the process (continuity); None = not recorded
     test_form: str = "pipe"  # pipe | plate; a plate test qualifies pipe of 610 mm OD and over only
+    valid_until: date | None = None
+    continuity_ok: bool | None = None  # document states continuity is maintained
+    source: str | None = None
 
 
 @dataclass(frozen=True)
 class Joint:
     id: str
     desc: str
-    heat: str
-    thickness_mm: float
+    heat: str | None  # governing heat (first side with a certificate)
+    thickness_mm: float | None
     od_mm: float | None
-    position: str  # 1G…6G, 1F…4F
+    position: str | None  # 1G…6G, 1F…4F; None = not on the drawing (all positions assumed)
     kind: str  # groove | fillet
-    wps: str
-    welder: str
+    wps: str | None
+    welder: str | None
     pressure: bool
     nde: str
+    heats: tuple[str, ...] = ()
+    pwht_required: bool | None = None  # the drawing / design asks for PWHT regardless of the code
 
 
 @dataclass(frozen=True)
@@ -70,18 +84,21 @@ class AsBuilt:  # one row of the as-built weld log
     welder: str
     wps: str
     heats: tuple[str, ...]  # heat number on each side of the joint
-    weld_date: date = date(2026, 10, 12)
+    weld_date: date | None = date(2026, 10, 12)
     deviation: str | None = None  # NCR / concession reference when the WPS differs from the plan
+    current_a: float | None = None
+    record_heats: dict[str, tuple[str, ...]] = field(default_factory=dict)  # heats per source record, for conflicts
+    sources: tuple[str, ...] = ()  # files that record this weld
 
 
 @dataclass(frozen=True)
 class PwhtChart:  # one furnace or local PWHT load
     load_id: str
     joints: tuple[str, ...]
-    soak_c: float
-    hold_min: float
-    heat_rate_c_per_h: float  # above 425 °C
-    cool_rate_c_per_h: float  # above 425 °C
+    soak_c: float | None
+    hold_min: float | None
+    heat_rate_c_per_h: float | None  # above 425 °C
+    cool_rate_c_per_h: float | None  # above 425 °C
 
 
 @dataclass(frozen=True)
@@ -89,24 +106,26 @@ class NdeReport:
     report_no: str
     joint: str
     method: str  # RT | UT | MT | PT | VT
-    extent_pct: float
-    result: str  # ACCEPT | REJECT
+    extent_pct: float | None
+    result: str | None  # ACCEPT | REJECT
     level: str | None  # signing technician's level: II, III; None = unsigned
+    drawing_rev: str | None = None
+    source: str | None = None
 
 
 @dataclass(frozen=True)
 class ThicknessReading:
     location: str
-    heat: str
+    heat: str | None
     measured_mm: float
-    required_mm: float  # design minimum plus corrosion allowance, from the drawing
+    required_mm: float | None  # design minimum plus corrosion allowance, from the drawing
 
 
 @dataclass(frozen=True)
 class Hydrotest:
-    pressure_mpa: float
-    hold_min: float
-    metal_temp_c: float
+    pressure_mpa: float | None
+    hold_min: float | None
+    metal_temp_c: float | None
     witness: str | None
 
 
@@ -121,6 +140,9 @@ class Dossier:
     nde_reports: list[NdeReport] = field(default_factory=list)
     thickness: list[ThicknessReading] = field(default_factory=list)
     hydrotest: Hydrotest | None = None
+    drawing_no: str | None = None
+    drawing_rev: str | None = None
+    design_pressure_mpa: float | None = None
 
 
 SAMPLE_DOSSIER = Dossier(
@@ -172,21 +194,28 @@ SAMPLE_DOSSIER = Dossier(
 )
 
 
+def _n(v, unit=" mm") -> str:
+    return "?" if v is None else f"{v:g}{unit}"
+
+
 def facts(dossier: Dossier, slot: str) -> list[str]:
     """One line per record, shown under a filled document slot."""
     if slot == "mtc":
-        return [f"{m.heat} · {m.spec} · {m.thickness_mm:g} mm · P-No.{m.p_no}" for m in dossier.materials]
+        return [f"{m.heat} · {m.spec or '?'} · {_n(m.thickness_mm)} · P-No.{m.p_no or '?'}" for m in dossier.materials]
     if slot == "wps":
-        return [f"{p.id} · {'+'.join(p.processes)} · {p.t_min_mm:g}–{p.t_max_mm:g} mm · {'PWHT' if p.pwht else 'no PWHT'}"
-                for p in dossier.procedures.values()]
+        return [f"{p.id} · {'+'.join(p.processes) or '?'} · "
+                f"{'range not stated' if p.t_min_mm is None or p.t_max_mm is None else f'{p.t_min_mm:g}–{p.t_max_mm:g} mm'} · "
+                f"{'PWHT' if p.pwht else 'no PWHT'}" for p in dossier.procedures.values()]
     if slot == "wpq":
-        return [f"{q.welder} {q.name} · {'+'.join(q.processes)} · {q.test.split(' · ')[0]}" for q in dossier.welders.values()]
+        return [f"{q.welder} {q.name} · {'+'.join(q.processes) or '?'} · {q.test.split(' · ')[0]}" for q in dossier.welders.values()]
     if slot == "drawing":
-        procs = sorted({j.wps for j in dossier.joints})
-        return [f"{len(dossier.joints)} joints · {', '.join(j.id for j in dossier.joints)}", f"WPS used: {', '.join(procs)}"]
+        procs = sorted({j.wps for j in dossier.joints if j.wps})
+        head = f"{dossier.drawing_no} rev {dossier.drawing_rev} · " if dossier.drawing_no else ""
+        return [f"{head}{len(dossier.joints)} joints · {', '.join(j.id for j in dossier.joints)}",
+                f"WPS used: {', '.join(procs) or 'not stated'}"]
     out = [f"Weld log: {len(dossier.as_built)} joints · welders, dates, heats"]
-    out += [f"PWHT {c.load_id}: {', '.join(c.joints)} · {c.soak_c:g} °C · {c.hold_min:g} min" for c in dossier.pwht_charts]
+    out += [f"PWHT {c.load_id}: {', '.join(c.joints)} · {_n(c.soak_c, ' °C')} · {_n(c.hold_min, ' min')}" for c in dossier.pwht_charts]
     out += [f"NDE: {len(dossier.nde_reports)} reports" + (f" · thickness: {len(dossier.thickness)} readings" if dossier.thickness else "")]
     if dossier.hydrotest:
-        out.append(f"Hydrotest: {dossier.hydrotest.pressure_mpa:g} MPa · {dossier.hydrotest.hold_min:g} min")
+        out.append(f"Hydrotest: {_n(dossier.hydrotest.pressure_mpa, ' MPa')} · {_n(dossier.hydrotest.hold_min, ' min')}")
     return out

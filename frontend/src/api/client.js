@@ -99,6 +99,12 @@ export const api = {
       return request('DELETE', `${p(no)}/assessment/files?${q}`)
     },
     loadSamples: (no, slot) => request('POST', `${p(no)}/assessment/samples`, { json: { slot } }),
+    upload(no, file, slot) {
+      const form = new FormData()
+      form.append('file', file)
+      if (slot) form.append('slot', slot)
+      return request('POST', `${p(no)}/assessment/documents`, { form })
+    },
     report: (no) => request('GET', `${p(no)}/assessment/report`),
     run: (no) => request('POST', `${p(no)}/assessment/runs`),
     setWaiver: (no, key, status, reason = '') =>

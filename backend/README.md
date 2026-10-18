@@ -69,7 +69,11 @@ uv run python -m app.auth add-user you@company.com --name "Your Name"
 uv run alembic revision --autogenerate -m "describe change"
 uv run alembic upgrade head
 uv run pytest
+uv run python -m scripts.eval_examples          # read ../example-docs with Gemini, score the planted defects
 ```
+
+`scripts/eval_examples.py` caches each extraction in `var/eval-cache` by file hash, so re-runs only call Gemini for new
+or changed files (`--refresh` reads everything again, `--folder NAME` limits it to one dossier).
 
 ## Docker
 

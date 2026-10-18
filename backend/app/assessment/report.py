@@ -1,4 +1,4 @@
-"""Formal assessment report: the assessment result wrapped with project information, conclusion, limitations,
+"""Formal assessment report: the assessment result wrapped with project information, conclusion,
 references and the approval block."""
 
 from datetime import date, datetime
@@ -114,15 +114,6 @@ def build_report(*, project_no: str, project_name: str, prepared_by: str, condit
         ],
         "conclusion_label": "Plan Assessment Conclusion" if plan else "Assessment Conclusion",
         "conclusion": conclusion,
-        "limitations": [
-            "This is a plan review. No as-built document was submitted, so production welds, actual welders and PWHT charts "
-            "are not verified." if plan else "As-built verification covers the joints on the welding drawing only.",
-            "WPS and WPQ are assessed against the joints, thicknesses and positions on the welding drawing.",
-            ("PWHT is determined from the mill certificate (P-Number, thickness) and the governing standard. "
-             "Supplementary requirements may add PWHT or hardness limits."),
-            ("If the design conditions, governing standard or supplementary requirements change, a reassessment should "
-             "be undertaken."),
-        ],
         "comments": "Clause references follow the latest edition of each standard. Please make sure the edition conforms with "
                     "the contract and the original design documents. Brinell hardness is converted from Vickers (HV10) by "
                     "approximation.",

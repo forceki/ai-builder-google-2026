@@ -127,6 +127,7 @@ SLOTS: list[Slot] = [
     Slot("wpq", "WPQ", "Welder performance qualification and continuity log", True, ("WPQ-118.pdf", "WPQ-204.pdf")),
     Slot("drawing", "Welding drawing", "Weld map: joints, WPS and welder assigned, NDE", True, ("HBK-PV-110_RevB_WeldMap.pdf",)),
     Slot("asbuilt", "As-built document", "Actual welders, PWHT charts, NDE done", False, ("ASB_PS-3_RevA.pdf",)),
+    Slot("other", "Other documents", "Kept with the dossier (e.g. a dossier index); not checked by the rules", False, ()),
 ]
 SLOT_IDS = [s.id for s in SLOTS]
 

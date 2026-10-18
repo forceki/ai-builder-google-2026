@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from litestar import Controller, delete, get, patch, post, put
+from litestar import Controller, Response, delete, get, patch, post, put
 from litestar.datastructures import UploadFile
 from litestar.enums import RequestEncodingType
 from litestar.exceptions import ClientException, NotFoundException
@@ -34,6 +34,7 @@ from app.assessment.dossier import SAMPLE_DOSSIER, Dossier, facts
 from app.assessment.engine import VERDICT_TONE, assess, conclude, missing_required
 from app.assessment.intake import AUTO
 from app.assessment.report import build_report
+from app.assessment.snapshot import NoPreview, snapshot
 from app.assessment.sorting import sort_file
 from app.config import get_settings
 from app.models import Assessment, AssessmentRun, Document, Project, User
@@ -143,7 +144,7 @@ class AssessmentOut(BaseModel):
     state: State = Field(description="draft → ready → complete; stale when conditions or documents changed after the run")
     stale_reasons: list[str]
     run: RunOut | None = Field(description="Latest run")
-    sample_data: bool = Field(description="True while results come from the sample dossier rather than uploaded documents")
+    sample_data: bool = Field(description="True while results come from the sample documents rather than uploaded files")
 
 
 @dataclass
@@ -430,6 +431,32 @@ class AssessmentController(Controller):
         run.result = _apply_waivers(run.result, waivers)
         run.conclusion = run.result["verdict"]
         return _out(project, a, run, await _view(db, a))
+
+    @get("/projects/{project_no:str}/assessment/snapshot", cache=False)
+    async def get_snapshot(
+        self, db: AsyncSession, user: User, project_no: str, file: str, page: int = 1, box: str | None = None
+    ) -> Response[bytes]:
+        """PNG crop of an uploaded document around a finding's evidence box ("ymin,xmin,ymax,xmax", 0–1000)."""
+        project = await get_project(db, project_no, user)
+        a = await _load(db, project)
+        entry = next((f for f in a.files if f.get("document_id") and f["name"] == file), None)
+        doc = await db.get(Document, uuid.UUID(entry["document_id"])) if entry else None
+        if doc is None or doc.project_id != project.id:
+            raise NotFoundException(f"{file} is not an uploaded document of this assessment")
+        coords = None
+        if box:
+            try:
+                coords = tuple(int(float(v)) for v in box.split(","))
+            except ValueError as e:
+                raise ClientException("box must be ymin,xmin,ymax,xmax") from e
+            if len(coords) != 4:
+                raise ClientException("box must be ymin,xmin,ymax,xmax")
+        data = await storage.get(get_settings().documents_bucket, doc.storage_key)
+        try:
+            png = snapshot(doc.filename, data, page, coords)
+        except NoPreview as e:
+            raise NotFoundException(str(e)) from e
+        return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
     @get("/projects/{project_no:str}/assessment/report")
     async def get_report(self, db: AsyncSession, user: User, project_no: str) -> dict[str, Any]:

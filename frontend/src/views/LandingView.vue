@@ -4,10 +4,10 @@ import { useMotion } from '../composables/useMotion'
 import SiteHeader from '../components/sections/SiteHeader.vue'
 import HeroSection from '../components/sections/HeroSection.vue'
 import ProblemSection from '../components/sections/ProblemSection.vue'
+import CostSection from '../components/sections/CostSection.vue'
 import ProcessSection from '../components/sections/ProcessSection.vue'
 import ChecksSection from '../components/sections/ChecksSection.vue'
 import CoverageSection from '../components/sections/CoverageSection.vue'
-import ReportSection from '../components/sections/ReportSection.vue'
 import PrinciplesSection from '../components/sections/PrinciplesSection.vue'
 import ContactSection from '../components/sections/ContactSection.vue'
 import SiteFooter from '../components/sections/SiteFooter.vue'
@@ -27,10 +27,10 @@ onBeforeUnmount(() => document.documentElement.removeAttribute('data-page'))
     <main>
       <HeroSection />
       <ProblemSection />
+      <CostSection />
       <ProcessSection />
       <ChecksSection />
       <CoverageSection />
-      <ReportSection />
       <PrinciplesSection />
       <ContactSection />
     </main>

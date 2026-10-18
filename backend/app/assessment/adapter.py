@@ -11,6 +11,7 @@ from datetime import date
 from app.assessment.dossier import (
     AsBuilt,
     Dossier,
+    Evidence,
     Hydrotest,
     Joint,
     Material,
@@ -134,6 +135,25 @@ def thickness_max(test_t_mm: float | None) -> float | None:
 
 # Dossier ------------------------------------------------------------------------------------------------------
 
+def _ev(filename: str, rec: dict, label: str, key: str = "box_2d") -> Evidence | None:
+    page = rec.get("page")
+    if not page:
+        return None
+    box = rec.get(key)
+    box = tuple(max(0, min(1000, int(v))) for v in box) if isinstance(box, list) and len(box) == 4 else None
+    if key != "box_2d" and box is None:
+        return None  # a field without its own box falls back to the record's
+    return Evidence(filename, int(page), box, label)
+
+
+def _evs(filename: str, rec: dict, label: str, **fields: str) -> dict[str, Evidence]:
+    """{"record": …, name: …} for the record and any field that has its own box (fields: name → box key)."""
+    out = {"record": _ev(filename, rec, label)}
+    for name, key in fields.items():
+        out[name] = _ev(filename, rec, label, key)
+    return {k: v for k, v in out.items() if v is not None}
+
+
 def _range(lo: float | None, hi: float | None) -> tuple[float, float] | None:
     return (lo, hi) if lo is not None and hi is not None else None
 
@@ -166,7 +186,8 @@ def build_dossier(docs: list[ExtractedDoc]) -> Dossier:
                     chemistry={e["symbol"].capitalize(): e["percent"] for e in h.get("chemistry", [])},
                     impact_temp_c=h.get("impact_temp_c"), impact_j=h.get("impact_avg_j"),
                     tensile_mpa=h.get("tensile_mpa"), tensile_min_mpa=h.get("tensile_min_mpa"), signed=h.get("signed"),
-                    source=d.filename))
+                    source=d.filename, evidence=_evs(d.filename, h, f"Certificate, heat {heat}",
+                                                     tensile="tensile_box_2d", signature="signature_box_2d")))
 
     procedures: dict[str, Procedure] = {}
     for d in by["wps"]:
@@ -182,7 +203,8 @@ def build_dossier(docs: list[ExtractedDoc]) -> Dossier:
                 else ("PWHT" if p.get("pwht") else None),
                 preheat_c=p.get("preheat_min_c"), hardness_hv10=p.get("hardness_hv10"), impact_temp_c=p.get("impact_temp_c"),
                 pwht_band_c=band if p.get("pwht") else None, current_a=_range(p.get("current_min_a"), p.get("current_max_a")),
-                pwht_joints=tuple(norm_id(j) for j in p.get("pwht_joints", [])), revision=p.get("revision"), source=d.filename)
+                pwht_joints=tuple(norm_id(j) for j in p.get("pwht_joints", [])), revision=p.get("revision"), source=d.filename,
+                evidence=_evs(d.filename, p, wid, current="current_box_2d", pwht="pwht_box_2d"))
 
     welders: dict[str, WelderQual] = {}
     for d in by["wpq"]:
@@ -200,7 +222,8 @@ def build_dossier(docs: list[ExtractedDoc]) -> Dossier:
                 t_max_mm=q.get("thickness_max_mm") if q.get("thickness_max_mm") is not None else thickness_max(q.get("test_thickness_mm")),
                 od_min_mm=diameter_min(q.get("test_od_mm")), last_weld=parse_date(q.get("last_used")),
                 test_form=q.get("test_form") or "pipe", valid_until=parse_date(q.get("valid_until")),
-                continuity_ok=q.get("continuity_maintained"), source=d.filename)
+                continuity_ok=q.get("continuity_maintained"), source=d.filename,
+                evidence=_evs(d.filename, q, f"WPQ, welder {wid}"))
 
     # As-built rows: the weld log and the fabrication record may both list a weld; keep both heat lists for conflicts.
     rows: dict[str, dict] = {}
@@ -212,9 +235,12 @@ def build_dossier(docs: list[ExtractedDoc]) -> Dossier:
         data = d.data
         for r in data.get("weld_rows", []):
             jid = norm_id(r["joint_id"])
-            row = rows.setdefault(jid, {"record_heats": {}, "sources": []})
+            row = rows.setdefault(jid, {"record_heats": {}, "sources": [], "evidence": {}})
             if d.filename not in row["sources"]:
                 row["sources"].append(d.filename)
+            e = _ev(d.filename, r, f"{jid} in the {r.get('source', 'record').replace('_', ' ')}")
+            if e is not None:
+                row["evidence"].setdefault(d.filename, e)
             heats = tuple(norm_heat(h) for h in r.get("heats", []) if norm_heat(h))
             if heats:
                 row["record_heats"][f"{d.filename} ({r.get('source', 'record').replace('_', ' ')})"] = heats
@@ -226,24 +252,30 @@ def build_dossier(docs: list[ExtractedDoc]) -> Dossier:
                 if heats and (r.get("source") == "weld_log" or "heats" not in row):
                     row["heats"] = heats
         for p in data.get("pwht", []):
-            pwht.append(PwhtChart(p.get("load_id") or f"PWHT-{len(pwht) + 1}", tuple(norm_id(j) for j in p.get("joints", [])),
-                                  p.get("soak_c"), p.get("hold_min"), p.get("heat_rate_c_per_h"), p.get("cool_rate_c_per_h")))
+            load = p.get("load_id") or f"PWHT-{len(pwht) + 1}"
+            pwht.append(PwhtChart(load, tuple(norm_id(j) for j in p.get("joints", [])), p.get("soak_c"), p.get("hold_min"),
+                                  p.get("heat_rate_c_per_h"), p.get("cool_rate_c_per_h"),
+                                  evidence=_evs(d.filename, p, f"PWHT record {load}")))
         for n in data.get("nde", []):
             nde.append(NdeReport(n["report_no"], norm_id(n["joint_id"]), n["method"].upper(), n.get("extent_pct"),
-                                 n.get("result"), n.get("level"), n.get("drawing_revision"), d.filename))
+                                 n.get("result"), n.get("level"), n.get("drawing_revision"), d.filename,
+                                 evidence=_evs(d.filename, n, f"{n['report_no']}")))
         for t in data.get("thickness", []):
-            thickness.append(ThicknessReading(t["location"], norm_heat(t.get("heat")) or None, t["measured_mm"], t.get("required_mm")))
+            thickness.append(ThicknessReading(t["location"], norm_heat(t.get("heat")) or None, t["measured_mm"], t.get("required_mm"),
+                                              evidence=_evs(d.filename, t, f"Thickness, {t['location']}")))
         for h in data.get("hydrotest", []):
-            hydro = Hydrotest(h.get("pressure_mpa"), h.get("hold_min"), h.get("metal_temp_c"), h.get("witness"))
+            hydro = Hydrotest(h.get("pressure_mpa"), h.get("hold_min"), h.get("metal_temp_c"), h.get("witness"),
+                              evidence=_evs(d.filename, h, "Hydrotest record"))
 
     as_built = {jid: AsBuilt(welder=r.get("welder", ""), wps=r.get("wps", ""), heats=r.get("heats", ()),
                              weld_date=r.get("weld_date"), current_a=r.get("current_a"), record_heats=r["record_heats"],
-                             sources=tuple(r["sources"]))
+                             sources=tuple(r["sources"]), evidence=r["evidence"])
                 for jid, r in rows.items()}
 
     # Joints come from the weld map; anything it does not say is filled from the as-built record of that weld.
     joints: list[Joint] = []
     drawing = by["drawing"][0].data if by["drawing"] else {}
+    drawing_file = by["drawing"][0].filename if by["drawing"] else ""
     for dj in drawing.get("joints", []):
         jid = norm_id(dj["joint_id"])
         a = as_built.get(jid)
@@ -257,9 +289,11 @@ def build_dossier(docs: list[ExtractedDoc]) -> Dossier:
             kind=dj.get("kind") or "groove", wps=norm_id(dj.get("wps")) or (a.wps if a else None),
             welder=norm_welder(dj.get("welder")) or (a.welder if a else None), pressure=True,
             nde=_nde_text(dj.get("nde")) or _nde_text(drawing.get("general_nde")), heats=heats,
-            pwht_required=True if dj.get("pwht_required") or pwht_by_wps else None))
+            pwht_required=True if dj.get("pwht_required") or pwht_by_wps else None,
+            evidence=_evs(drawing_file, dj, f"{jid} on the weld map")))
 
     return Dossier(materials=list(materials.values()), procedures=procedures, welders=welders, joints=joints,
                    as_built=as_built, pwht_charts=pwht, nde_reports=nde, thickness=thickness, hydrotest=hydro,
                    drawing_no=drawing.get("drawing_no"), drawing_rev=drawing.get("revision"),
-                   design_pressure_mpa=drawing.get("design_pressure_mpa"))
+                   design_pressure_mpa=drawing.get("design_pressure_mpa"),
+                   drawing_evidence=_ev(drawing_file, drawing, "Drawing title block") if drawing else None)

@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 const props = defineProps({
-  status: { type: String, required: true }, // PASS | HOLD | REJECT
+  status: { type: String, required: true }, // PASS | HOLD | REJECT | PENDING | FAIL
   rot: { type: Number, default: 0 },
   size: { type: String, default: 'md' }, // sm | md | lg
 })
@@ -11,6 +11,8 @@ const tone = computed(() => ({
   PASS: '',
   HOLD: 'bg-signal',
   REJECT: 'bg-ink text-paper',
+  PENDING: 'bg-signal',
+  FAIL: 'bg-ink text-paper',
 }[props.status] ?? ''))
 
 const sizing = computed(() => ({

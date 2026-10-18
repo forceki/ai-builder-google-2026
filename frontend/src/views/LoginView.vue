@@ -157,7 +157,7 @@ const onSignOut = () => store.dispatch('auth/signOut')
               <span aria-hidden="true" class="size-[8px] bg-ink"></span>{{ demoLabel }}
             </button>
             <p class="m-0 font-mono text-[11px] leading-relaxed text-muted">
-              Signs in as the demo account. Three sample dossiers: one released, one on hold, one rejected.
+              Signs in as the demo account. Three sample documents: one released, one on hold, one rejected.
             </p>
           </div>
 

@@ -16,7 +16,7 @@ def run(graph: TraceGraph) -> list[RuleFinding]:
                                         f"Weld {weld.weld_id} has no WPS recorded.", src))
         elif weld.wps not in graph.procedures:
             findings.append(RuleFinding(CHECK, "R-WLD-01", weld.weld_id, Status.HOLD,
-                                        f"Weld {weld.weld_id} references {weld.wps}, which is not in the dossier.", src))
+                                        f"Weld {weld.weld_id} references {weld.wps}, which is not in the documents.", src))
 
         if not weld.welder_id:
             findings.append(RuleFinding(CHECK, "R-WLD-02", weld.weld_id, Status.HOLD,

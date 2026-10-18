@@ -9,6 +9,19 @@ from datetime import date
 
 
 @dataclass(frozen=True)
+class Evidence:
+    """Where a value was read: file, 1-based page and box [ymin, xmin, ymax, xmax] scaled 0–1000."""
+
+    file: str
+    page: int
+    box: tuple[int, int, int, int] | None = None
+    label: str = ""
+
+
+Evidences = dict[str, Evidence]  # "record" for the whole record; specific fields by name (e.g. "tensile")
+
+
+@dataclass(frozen=True)
 class Material:
     heat: str
     spec: str | None
@@ -23,6 +36,7 @@ class Material:
     tensile_min_mpa: float | None = None
     signed: bool | None = None
     source: str | None = None  # file the record was read from
+    evidence: Evidences = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -42,6 +56,7 @@ class Procedure:  # WPS with its supporting PQR
     pwht_joints: tuple[str, ...] = ()  # PWHT limited to these joints, empty = every joint welded to this WPS
     revision: str | None = None
     source: str | None = None
+    evidence: Evidences = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -60,6 +75,7 @@ class WelderQual:  # WPQ
     valid_until: date | None = None
     continuity_ok: bool | None = None  # document states continuity is maintained
     source: str | None = None
+    evidence: Evidences = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -77,6 +93,7 @@ class Joint:
     nde: str
     heats: tuple[str, ...] = ()
     pwht_required: bool | None = None  # the drawing / design asks for PWHT regardless of the code
+    evidence: Evidences = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -89,6 +106,7 @@ class AsBuilt:  # one row of the as-built weld log
     current_a: float | None = None
     record_heats: dict[str, tuple[str, ...]] = field(default_factory=dict)  # heats per source record, for conflicts
     sources: tuple[str, ...] = ()  # files that record this weld
+    evidence: Evidences = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -99,6 +117,7 @@ class PwhtChart:  # one furnace or local PWHT load
     hold_min: float | None
     heat_rate_c_per_h: float | None  # above 425 °C
     cool_rate_c_per_h: float | None  # above 425 °C
+    evidence: Evidences = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -111,6 +130,7 @@ class NdeReport:
     level: str | None  # signing technician's level: II, III; None = unsigned
     drawing_rev: str | None = None
     source: str | None = None
+    evidence: Evidences = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -119,6 +139,7 @@ class ThicknessReading:
     heat: str | None
     measured_mm: float
     required_mm: float | None  # design minimum plus corrosion allowance, from the drawing
+    evidence: Evidences = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -127,6 +148,7 @@ class Hydrotest:
     hold_min: float | None
     metal_temp_c: float | None
     witness: str | None
+    evidence: Evidences = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -143,6 +165,7 @@ class Dossier:
     drawing_no: str | None = None
     drawing_rev: str | None = None
     design_pressure_mpa: float | None = None
+    drawing_evidence: Evidence | None = None  # the drawing's title block
 
 
 SAMPLE_DOSSIER = Dossier(

@@ -30,7 +30,7 @@ const sectors = [
   <section id="coverage" aria-labelledby="cov-h" class="wrap flex flex-col gap-[clamp(32px,4vw,48px)] pb-[clamp(64px,10vw,140px)]">
     <div class="flex flex-wrap items-end justify-between gap-6">
       <div class="flex max-w-[720px] flex-col gap-6">
-        <SectionLabel num="05·B" label="ALL WELDING" />
+        <SectionLabel label="Coverage" />
         <h2 id="cov-h" class="h-section text-balance">Plant, ship or shop floor. Checked to your code.</h2>
         <p class="m-0 max-w-[600px] text-lg leading-normal text-pretty">
           Pick where the work is used and the governing standard. Hibanako checks each WPS, WPQ and mill certificate against
@@ -39,7 +39,7 @@ const sectors = [
       </div>
       <RouterLink
         to="/projects"
-        class="inline-flex items-center gap-3 rounded border border-ink bg-white px-[22px] py-3.5 font-mono text-[13px] font-bold tracking-[0.08em] whitespace-nowrap text-ink uppercase no-underline shadow-[inset_0_-4px_0_rgb(var(--shade)/0.12)] hover:text-ink"
+        class="inline-flex items-center gap-2 rounded-lg border border-ink/25 bg-white px-[22px] py-3.5 text-[15px] font-semibold whitespace-nowrap text-ink no-underline hover:border-ink"
       >
         Start an assessment →
       </RouterLink>
@@ -55,7 +55,7 @@ const sectors = [
         <div class="flex items-center justify-between font-mono text-xs tracking-[0.06em] text-muted">
           <span>SECTOR {{ s.id }}</span><span aria-hidden="true" class="size-[9px] rounded-full border" :class="s.dot"></span>
         </div>
-        <h3 class="m-0 text-[30px] font-extrabold tracking-[-0.025em]">{{ s.name }}</h3>
+        <h3 class="m-0 text-2xl font-semibold tracking-[-0.02em]">{{ s.name }}</h3>
         <p class="m-0 text-[15px] leading-[1.55] text-muted">{{ s.text }}</p>
         <div class="flex flex-col gap-2 border-t border-dashed border-ink/30 pt-3.5 font-mono">
           <span class="text-xs tracking-[0.06em] text-muted">GOVERNING</span>

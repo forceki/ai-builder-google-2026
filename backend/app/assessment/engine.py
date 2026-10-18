@@ -23,7 +23,7 @@ from datetime import date
 from math import inf
 
 from app.assessment.catalog import GOVERNING, PROFILES, SECTORS, SLOTS, SUPP_BY_ID, Governing
-from app.assessment.dossier import Dossier, Joint, Material
+from app.assessment.dossier import Dossier, Evidence, Joint, Material
 
 # Positions each production position needs.
 POSITIONS = {"1G": "F", "2G": "H", "3G": "V", "4G": "O", "5G": "FVO", "6G": "FHVO", "1F": "F", "2F": "H", "3F": "V", "4F": "O"}
@@ -96,6 +96,7 @@ class Finding:
     id: str = ""  # F-0001…, assigned after sorting
     status: str = "open"  # open | waived
     waiver: dict | None = None
+    evidence: list[dict] = field(default_factory=list)  # [{file, page, box, label}] for snapshots of the source
 
     @property
     def key(self) -> str:
@@ -186,13 +187,30 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         hits = [n for n in names if any(_norm(r) and _norm(r) in _norm(n) for r in refs)]
         return hits or names
 
-    def find(rule_id, severity, item, statement, clause_, fix, documents):
-        findings.append(Finding(rule_id, severity, item, statement, clause_, fix, documents))
+    def find(rule_id, severity, item, statement, clause_, fix, documents, ev=None):
+        findings.append(Finding(rule_id, severity, item, statement, clause_, fix, documents, evidence=ev or []))
 
-    def once(rule_id, severity, item, statement, clause_, fix, documents):
+    def once(rule_id, severity, item, statement, clause_, fix, documents, ev=None):
         """Report a document-level gap once, however many joints run into it."""
         if not any(f.rule_id == rule_id and f.item == item for f in findings):
-            find(rule_id, severity, item, statement, clause_, fix, documents)
+            find(rule_id, severity, item, statement, clause_, fix, documents, ev)
+
+    def evid(*parts) -> list[dict]:
+        """Evidence for a finding: Evidence objects, records (their whole-record box) or (record, field) pairs."""
+        out: list[dict] = []
+        for part in parts:
+            record, key = part if isinstance(part, tuple) else (part, "record")
+            if record is None:
+                continue
+            ev = record if isinstance(record, Evidence) else (
+                getattr(record, "evidence", {}).get(key) or getattr(record, "evidence", {}).get("record"))
+            if ev is not None and asdict(ev) not in out:
+                out.append(asdict(ev))
+        return out
+
+    def log_ev(jid: str) -> list[Evidence]:
+        a = dossier.as_built.get(jid)
+        return list(a.evidence.values()) if a else []
 
     def num(v, unit=" mm") -> str:
         return "—" if v is None else f"{v:g}{unit}"
@@ -207,7 +225,7 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         if abs(dossier.design_pressure_mpa - cond_p) > 0.01 * max(cond_p, 0.1):
             find("S-DRW-03", FAIL, "Design data", f"The drawing gives design pressure {dossier.design_pressure_mpa:g} MPa; "
                  f"the conditions say {cond_p:g} MPa.", clause("UG-116", "Design data"),
-                 "Correct the design pressure in step 1 or on the drawing.", docs("drawing"))
+                 "Correct the design pressure in step 1 or on the drawing.", docs("drawing"), ev=evid(dossier.drawing_evidence))
 
     # Materials, per heat
     def material_row(m: Material) -> list[Cell]:
@@ -223,28 +241,27 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
                  f"Certificate for heat {m.heat} does not state its EN 10204 type; type 3.1 or 3.2 is required."
                  if m.cert_type is None else
                  f"Certificate for heat {m.heat} is EN 10204 type {m.cert_type}; type 3.1 or 3.2 is required.",
-                 "EN 10204", "Request an EN 10204 3.1 certificate from the supplier.", mtc)
+                 "EN 10204", "Request an EN 10204 3.1 certificate from the supplier.", mtc, ev=evid(m))
         if not tensile_ok:
             find("S-MTC-04", FAIL, m.heat, f"Heat {m.heat} tensile strength {m.tensile_mpa:g} MPa is below the "
                  f"{m.tensile_min_mpa:g} MPa minimum of {m.spec or 'the specification'}.",
                  "Material specification" + (" (UG-93)" if g.asme else ""),
-                 "Reject the material, or obtain a retest certificate that meets the specification.", mtc)
+                 "Reject the material, or obtain a retest certificate that meets the specification.", mtc, ev=evid((m, "tensile")))
         if not signed_ok:
-            find("S-MTC-03", WARN, m.heat, f"The certificate for heat {m.heat} is not signed by the manufacturer's "
-                 "authorised inspection representative.", "EN 10204 §4", "Request a signed certificate.", mtc)
+            find("S-MTC-03", WARN, m.heat, f"Certificate for heat {m.heat} not signed by the manufacturer's authorised inspector.", "EN 10204 §4", "Request a signed certificate.", mtc, ev=evid((m, "signature")))
         if g.asme and m.p_no is None and m.spec:
             find("S-MTC-05", WARN, m.heat, f"{m.spec} (heat {m.heat}) has no P-Number in the table; a non-listed material "
                  "needs a Code Case or a UG-10 reconciliation.", clause("ASME IX QW/QB-422; UG-10"),
-                 "Confirm the P-No., or attach the UG-10 reconciliation or Code Case.", mtc)
+                 "Confirm the P-No., or attach the UG-10 reconciliation or Code Case.", mtc, ev=evid(m))
         if not ce_ok:
             find("S-MTC-02", WARN, m.heat, f"Carbon equivalent {ce:.2f} for heat {m.heat} exceeds {CE_PREHEAT_REVIEW}; "
-                 "preheat needs review.", "NACE SP0472, material spec", "Review the WPS preheat for this heat.", mtc)
+                 "preheat needs review.", "NACE SP0472, material spec", "Review the WPS preheat for this heat.", mtc, ev=evid(m))
         if not cv_ok:
             find("X-09", FAIL, m.heat,
                  f"Heat {m.heat} has no impact test; impact testing is required at MDMT {mdmt:g} °C." if m.impact_temp_c is None
                  else f"Heat {m.heat} was impact tested at {m.impact_temp_c:g} °C, warmer than MDMT {mdmt:g} °C.",
                  clause("UG-84, UCS-66", "Impact test requirement"),
-                 "Provide Charpy results at or below MDMT, or use impact-tested material.", mtc)
+                 "Provide Charpy results at or below MDMT, or use impact-tested material.", mtc, ev=evid(m))
         impact = "—" if m.impact_temp_c is None else f"{num(m.impact_j, ' J')} @ {m.impact_temp_c:g} °C"
         tensile = "—" if m.tensile_mpa is None else f"{m.tensile_mpa:g}" + (
             f" ≥ {m.tensile_min_mpa:g}" if m.tensile_min_mpa is not None else "") + " MPa"
@@ -272,8 +289,8 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
             required, basis, ref = True, "Lethal service", "UW-2(a)"
         elif g.pwht_mm and p_no == "1" and j.thickness_mm is None:
             basis = "Thickness not on the drawing"
-            find("S-DRW-02", WARN, j.id, f"{j.id}: the drawing gives no thickness, so PWHT could not be determined.",
-                 clause(g.clause), f"Add the governing thickness of {j.id} to the weld map.", docs("drawing"))
+            find("S-DRW-02", WARN, j.id, f"{j.id}: no thickness on the drawing; PWHT not determined.",
+                 clause(g.clause), f"Add the governing thickness of {j.id} to the weld map.", docs("drawing"), ev=evid(j))
         elif g.pwht_mm and p_no == "1":
             t, (free, preheat_up_to) = j.thickness_mm, g.pwht_mm
             band = f"over {free:g} mm" if preheat_up_to == inf else f"{free:g}–{preheat_up_to:g} mm"
@@ -289,23 +306,25 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         if not required and j.pressure and has("MR0103") and wps and (wps.hardness_hv10 or 0) > MR0103_HV10_MAX:
             required, basis, ref = True, "Weld hardness above 200 HBW (MR0103)", "NACE MR0103"
         if not required and j.pwht_required:
-            required, basis, ref = True, "Required by the drawing / WPS", "Design"
+            required, basis, ref = True, "Drawing / WPS note", "Design"
         pwht[j.id] = (required, basis, ref)
 
     def pwht_row(j: Joint) -> list[Cell]:
         required, basis, ref = pwht[j.id]
         wps = dossier.procedures.get(j.wps)
-        qualified = None if "wps" not in present else bool(wps and wps.pwht)
+        # A WPS that was not submitted is reported once (S-WPS-01); its PWHT is unknown, not failed.
+        qualified = None if "wps" not in present or wps is None else bool(wps.pwht)
         status = PENDING if qualified is None else PASS if (qualified or not required) else FAIL
         if status == FAIL:
             find("X-05", FAIL, j.id, f"{j.id}: PWHT is required ({basis}) but {j.wps} is not qualified with PWHT; adding "
                  "PWHT is an essential variable.", clause(f"{ref}; ASME IX QW-407.1"),
                  f"Assign a WPS qualified with PWHT to {j.id}, or qualify {j.wps} with PWHT.",
-                 docs("wps", j.wps) + docs("drawing"))
+                 docs("wps", j.wps) + docs("drawing"), ev=evid(j, (wps, "pwht")))
         m = materials.get(j.heat)
         return [cell(j.id, bold=True), cell(m.spec if m and m.spec else "—"), cell(num(j.thickness_mm)), cell(basis), cell(ref),
                 cell(REQUIRED if required else "NOT REQUIRED", "ink" if required else "muted", True),
-                cell("WPS pending" if qualified is None else (wps.pwht if wps and wps.pwht else "No PWHT")), result(status)]
+                cell(("WPS not submitted" if "wps" in present else "WPS pending") if qualified is None
+                     else (wps.pwht if wps and wps.pwht else "No PWHT")), result(status)]
 
     sections.append(Section(
         "pwht", "PWHT Determination", f"Governing rule ({gov_id}): {g.rule}",
@@ -317,22 +336,21 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
     def wps_row(j: Joint) -> list[Cell]:
         w = dossier.procedures.get(j.wps) if j.wps else None
         if w is None:
-            find("S-WPS-01", FAIL, j.id, f"{j.id}: {j.wps} is assigned to this joint but was not submitted." if j.wps
-                 else f"{j.id}: no WPS is assigned to this joint.", clause("ASME IX QW-200"),
+            find("S-WPS-01", FAIL, j.id, f"{j.id}: {j.wps} not submitted." if j.wps else f"{j.id}: no WPS assigned.", clause("ASME IX QW-200"),
                  f"Upload {j.wps} with its PQR, or assign a submitted WPS." if j.wps else f"Assign a WPS to {j.id}.",
-                 docs("drawing") + list(getattr(dossier.as_built.get(j.id), "sources", ())))
+                 docs("drawing") + list(getattr(dossier.as_built.get(j.id), "sources", ())), ev=evid(j, *log_ev(j.id)))
             return [cell(j.id, bold=True), cell(j.wps or "None", "reject", True), *(cell("—") for _ in range(4)), result(FAIL)]
         m = materials.get(j.heat)
         wdocs = src(w, "wps", j.wps, w.pqr or "")
         if not w.pqr:
             once("S-WPS-03", FAIL, j.wps, f"{j.wps} names no supporting PQR.", clause("ASME IX QW-200.2"),
-                 f"Upload the PQR supporting {j.wps}.", wdocs)
+                 f"Upload the PQR supporting {j.wps}.", wdocs, ev=evid(w))
         if w.p_no is None:
             once("S-WPS-02", WARN, f"{j.wps} P-No.", f"{j.wps} does not state the base metal P-Number.",
-                 clause("ASME IX QW-403"), f"Add the P-Number to {j.wps}.", wdocs)
+                 clause("ASME IX QW-403"), f"Add the P-Number to {j.wps}.", wdocs, ev=evid(w))
         if w.t_min_mm is None or w.t_max_mm is None:
             once("S-WPS-02", WARN, f"{j.wps} thickness", f"{j.wps} does not state its qualified thickness range.",
-                 clause("ASME IX Table QW-451.1"), f"Add the thickness range qualified by the PQR to {j.wps}.", wdocs)
+                 clause("ASME IX Table QW-451.1"), f"Add the thickness range qualified by the PQR to {j.wps}.", wdocs, ev=evid(w))
         p_ok = m is None or m.p_no is None or w.p_no is None or w.p_no == m.p_no
         t_ok = j.thickness_mm is None or w.t_min_mm is None or w.t_max_mm is None or w.t_min_mm <= j.thickness_mm <= w.t_max_mm
         pw_ok = not pwht[j.id][0] or bool(w.pwht)
@@ -342,20 +360,20 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         if not p_ok:
             find("X-03", FAIL, j.id, f"{j.id}: {j.wps} ({w.pqr}) qualifies P-No.{w.p_no}; the material is "
                  f"P-No.{m.p_no if m else '?'}.", clause("ASME IX QW-403.11, QW-424"),
-                 f"Use a WPS whose PQR covers P-No.{m.p_no if m else '?'}.", wdocs + docs("mtc", j.heat))
+                 f"Use a WPS whose PQR covers P-No.{m.p_no if m else '?'}.", wdocs + docs("mtc", j.heat), ev=evid(w, j, m))
         if not t_ok:
             find("X-04", FAIL, j.id, f"{j.id}: {j.thickness_mm:g} mm is outside the {j.wps} range "
                  f"{w.t_min_mm:g}–{w.t_max_mm:g} mm.", clause("ASME IX Table QW-451.1"),
-                 f"Use a WPS qualified for {j.thickness_mm:g} mm.", wdocs + docs("drawing"))
+                 f"Use a WPS qualified for {j.thickness_mm:g} mm.", wdocs + docs("drawing"), ev=evid(w, j))
         if not h_ok:
-            find("X-10", FAIL, j.id, f"{j.id}: {w.pqr or j.wps} has no hardness survey; sour service needs one." if w.hardness_hv10
+            find("X-10", FAIL, j.id, f"{j.id}: no PQR hardness survey ({w.pqr or j.wps}); required for sour service." if w.hardness_hv10
                  is None else f"{j.id}: {w.pqr} hardness {w.hardness_hv10:g} HV10 exceeds the sour-service limit "
                  f"of {hv_limit} HV10.", "ISO 15156-2, ISO 17945",
-                 "Provide a PQR hardness survey within the limit, or add PWHT.", wdocs)
+                 "Provide a PQR hardness survey within the limit, or add PWHT.", wdocs, ev=evid(w))
         if not cv_ok:
             find("X-09", FAIL, f"{j.id} PQR", f"{j.id}: {w.pqr or j.wps} has no impact test; MDMT is {mdmt:g} °C." if
                  w.impact_temp_c is None else f"{j.id}: {w.pqr} impact test at {w.impact_temp_c:g} °C is warmer than MDMT "
-                 f"{mdmt:g} °C.", clause("UCS-67, ASME IX QW-170"), "Qualify a PQR with Charpy tests at or below MDMT.", wdocs)
+                 f"{mdmt:g} °C.", clause("UCS-67, ASME IX QW-170"), "Qualify a PQR with Charpy tests at or below MDMT.", wdocs, ev=evid(w))
         rng = "not stated" if w.t_min_mm is None or w.t_max_mm is None else f"{w.t_min_mm:g}–{w.t_max_mm:g}"
         return [cell(j.id, bold=True), cell(f"{j.wps} / {w.pqr or 'no PQR'}"),
                 cell(f"P{(m.p_no if m else None) or '?'} → P{w.p_no or '?'}", ok(p_ok)),
@@ -380,20 +398,19 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         when = f" on {on:%d %b %Y} when {j.id} was welded" if as_built else ""
         if not welder:
             return [Finding(rule_q, FAIL, item, f"{j.id}: no welder is recorded.", clause("ASME IX QW-301"),
-                            f"Record the welder of {j.id}.", docs("asbuilt" if as_built else "drawing"))], \
+                            f"Record the welder of {j.id}.", docs("asbuilt" if as_built else "drawing"), evidence=evid(j, *log_ev(j.id)))], \
                 [cell("None", "reject", True), *(cell("—") for _ in range(5))]
         if q is None:
             return [Finding(rule_q, FAIL, item, f"Welder {welder} {was} not qualified{when}: no WPQ on file.",
                             clause("ASME IX QW-301"), f"Provide the WPQ of welder {welder}, or re-weld {j.id} with a "
-                            "qualified welder.", docs("asbuilt" if as_built else "drawing"))], \
+                            "qualified welder.", docs("asbuilt" if as_built else "drawing"), evidence=evid(j, *log_ev(j.id)))], \
                 [cell(f"Welder {welder}", "reject", True), *(cell("—") for _ in range(5))]
         processes = w.processes if w else ()
         pr_ok = all(p in q.processes for p in processes)
         if j.position is None:
             # PRD edge case: no position on the weld map → all positions assumed, with a warning.
-            once("S-DRW-01", WARN, "Weld map positions", "The weld map gives no welding positions, so every joint is "
-                 "checked as if welded in all positions (6G / 4F equivalent).", clause("ASME IX Table QW-461.9"),
-                 "Add the production position of each joint to the weld map.", docs("drawing"))
+            once("S-DRW-01", WARN, "Weld map positions", "Weld map gives no welding positions; all positions assumed (6G / 4F).", clause("ASME IX Table QW-461.9"),
+                 "Add the production position of each joint to the weld map.", docs("drawing"), ev=evid(dossier.drawing_evidence))
         need = POSITIONS.get(j.position or "", "") or "FHVO"  # no position on the map: all positions
         quals = q.fillet if j.kind == "fillet" else q.groove
         po_ok = all(x in quals for x in need)
@@ -412,29 +429,29 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
                                f"{', '.join(POSITION_NAMES[x] for x in need)} {j.kind} welding ({pos}){when}.",
                                clause("ASME IX Table QW-461.9"),
                                f"Assign a welder qualified for {pos}, or requalify welder {welder} in {pos}.",
-                               qdocs + docs("drawing")))
+                               qdocs + docs("drawing"), evidence=evid(q, j, *(log_ev(j.id) if as_built else []))))
         elif not pr_ok:
             out.append(Finding(rule_q, FAIL, item, f"Welder {welder} {was} not qualified for {' + '.join(processes)}{when}.",
-                               clause("ASME IX QW-351"), f"Assign a welder qualified for {' + '.join(processes)}.", qdocs))
+                               clause("ASME IX QW-351"), f"Assign a welder qualified for {' + '.join(processes)}.", qdocs, evidence=evid(q, j, *(log_ev(j.id) if as_built else []))))
         elif not t_ok:
             out.append(Finding(rule_q, FAIL, item, f"{j.id}: {j.thickness_mm:g} mm exceeds the {q.t_max_mm:g} mm qualified "
                                f"for welder {welder}{when}.", clause("ASME IX QW-452.1"),
-                               f"Assign a welder qualified for {j.thickness_mm:g} mm.", qdocs))
+                               f"Assign a welder qualified for {j.thickness_mm:g} mm.", qdocs, evidence=evid(q, j, *(log_ev(j.id) if as_built else []))))
         elif not d_ok:
             out.append(Finding(rule_q, FAIL, item, f"{j.id}: pipe OD {j.od_mm:g} mm is below the {od_min:g} mm qualified "
                                f"for welder {welder}{when}" + (" (plate test)." if q.test_form == "plate" else "."),
                                clause("ASME IX QW-452.3, Table QW-461.9"),
-                               f"Assign a welder qualified for OD {j.od_mm:g} mm.", qdocs))
+                               f"Assign a welder qualified for OD {j.od_mm:g} mm.", qdocs, evidence=evid(q, j, *(log_ev(j.id) if as_built else []))))
         if expired:
-            out.append(Finding("X-07", FAIL, item, f"Welder {welder} ({q.id}) qualification expired on "
-                               f"{q.valid_until:%d %b %Y}, before {'the weld date ' + format(on, '%d %b %Y') if as_built else 'the assessment date'}.",
-                               clause("ASME IX QW-322"), f"Requalify welder {welder}, or assign a qualified welder.", qdocs))
+            out.append(Finding("X-07", FAIL, item, f"Welder {welder} qualification ({q.id}) expired {q.valid_until:%d %b %Y}"
+                               + (f", before the weld date {on:%d %b %Y}." if as_built else "."),
+                               clause("ASME IX QW-322"), f"Requalify welder {welder}, or assign a qualified welder.", qdocs, evidence=evid(q)))
         elif not c_ok:
             out.append(Finding("X-07", FAIL, item, f"Welder {welder} continuity lapsed: last use {q.last_weld:%d %b %Y}, "
                                f"{days} days before {'the weld date' if as_built else 'the assessment date'}." if days is not None
                                else f"Welder {welder}: continuity is not maintained.",
                                clause("ASME IX QW-322.1"),
-                               f"Provide a continuity record within 6 months, or requalify welder {welder}.", qdocs))
+                               f"Provide a continuity record within 6 months, or requalify welder {welder}.", qdocs, evidence=evid(q)))
         cont = (f"Expired {q.valid_until:%d %b %Y}" if expired else f"{days} days" if days is not None
                 else "Maintained" if q.continuity_ok else "Not recorded")
         cells = [cell(f"{welder} · {q.id}", bold=True), cell(" + ".join(processes) or "—", ok(pr_ok)),
@@ -466,7 +483,7 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
                  pending_text: str, ref: str, fix: str, slot: str, severity: str = FAIL):
         status = PENDING if not have else WARN if passed is None else PASS if passed else severity
         if status in (FAIL, WARN):
-            find(rule_id, status, label, f"{label}: {need.lower()}: {text} (limit {limit}).", ref, fix, docs(slot))
+            find(rule_id, status, label, f"{need}: {text or 'not recorded'}; limit {limit}.", ref, fix, docs(slot))
         rows.append([cell(label, bold=True), cell(need), cell(limit),
                      cell(text if have else pending_text, "ink" if have else "muted"), result(status)])
 
@@ -528,15 +545,14 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         on_map = {j.id for j in joints}
         for jid in dossier.as_built:
             if jid not in on_map:
-                find("X-13", FAIL, f"{jid} (as-built)", f"{jid} is in the as-built weld log but not on the weld map, so it has "
-                     "no planned NDE or PWHT.", "QC system", f"Add {jid} to the weld map with its NDE and PWHT, or explain "
-                     "the extra weld with an NCR.", weld_docs(jid) + docs("drawing"))
+                find("X-13", FAIL, f"{jid} (as-built)", f"{jid} welded but not on the weld map; no NDE or PWHT planned.", "QC system", f"Add {jid} to the weld map with its NDE and PWHT, or explain "
+                     "the extra weld with an NCR.", weld_docs(jid) + docs("drawing"), ev=evid(*log_ev(jid)))
 
         def weld_log_row(j: Joint) -> list[Cell]:
             a = dossier.as_built.get(j.id)
             if a is None:
-                find("X-13", FAIL, f"{j.id} (as-built)", f"{j.id} is on the welding drawing but not in the as-built weld log.",
-                     "QC system", f"Add {j.id} to the weld log with welder, date and WPS.", asb_docs)
+                find("X-13", FAIL, f"{j.id} (as-built)", f"{j.id} on the weld map but not in the weld log.",
+                     "QC system", f"Add {j.id} to the weld log with welder, date and WPS.", asb_docs, ev=evid(j))
                 return [cell(j.id, bold=True), cell(j.welder or "—"), cell("—", "reject"), *(cell("—") for _ in range(4)), result(FAIL)]
             out, _ = welder_check(j, a.welder, a.weld_date, as_built=True)
             # The planned welder's qualification is already X-06; only a continuity result the plan did not show is new.
@@ -550,18 +566,18 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
                 find("S-ASB-01", FAIL, f"{j.id} (as-built)", f"{j.id} was welded at {a.current_a:g} A; {a.wps} allows "
                      f"{w_used.current_a[0]:g}–{w_used.current_a[1]:g} A.", clause("ASME IX QW-409, WPS", "WPS"),
                      f"Raise an NCR for {j.id}: re-qualify the procedure for the current used, or cut out and re-weld.",
-                     weld_docs(j.id) + src(w_used, "wps", a.wps))
+                     weld_docs(j.id) + src(w_used, "wps", a.wps), ev=evid(*log_ev(j.id), (w_used, "current")))
             conflict = len({frozenset(h) for h in a.record_heats.values()}) > 1
             if conflict:
-                listed = "; ".join(f"{name}: {' + '.join(h)}" for name, h in a.record_heats.items())
-                find("X-14", FAIL, f"{j.id} heats", f"The records disagree on the heats welded at {j.id} ({listed}).",
+                listed = "; ".join(f"{re.sub(r'^.*[(](.*)[)]$', r'\1', name)} {' + '.join(h)}" for name, h in a.record_heats.items())
+                find("X-14", FAIL, f"{j.id} heats", f"{j.id}: heat records disagree ({listed}).",
                      "UG-77, UG-93" if g.asme else "Material traceability",
-                     f"Verify the hard-stamped heat numbers at {j.id} and correct the record.", weld_docs(j.id))
+                     f"Verify the hard-stamped heat numbers at {j.id} and correct the record.", weld_docs(j.id), ev=evid(*log_ev(j.id)))
             wps_ok = a.wps == j.wps or bool(a.deviation)
             if not wps_ok:
                 find("X-13", FAIL, f"{j.id} (as-built)", f"{j.id} was welded with {a.wps}; the plan assigns {j.wps} and no "
                      "deviation is recorded.", "QC system", f"Record an approved deviation (NCR) or re-qualify {j.id}.",
-                     weld_docs(j.id))
+                     weld_docs(j.id), ev=evid(*log_ev(j.id)))
             w = dossier.procedures.get(a.wps)
             heats_ok = True
             heats_seen = dict.fromkeys(h for hs in (a.record_heats.values() or [a.heats]) for h in hs) or dict.fromkeys(a.heats)
@@ -569,14 +585,14 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
                 m = materials.get(h)
                 if m is None:
                     heats_ok = False
-                    find("X-14", FAIL, f"{j.id} heat {h}", f"Heat {h} was welded at {j.id} but has no mill certificate.",
+                    find("X-14", FAIL, f"{j.id} heat {h}", f"Heat {h} (welded at {j.id}) has no mill certificate.",
                          "UG-77, UG-93" if g.asme else "Material traceability",
-                         f"Upload the EN 10204 3.1 certificate for heat {h}, or replace the material.", weld_docs(j.id))
+                         f"Upload the EN 10204 3.1 certificate for heat {h}, or replace the material.", weld_docs(j.id), ev=evid(*log_ev(j.id)))
                 elif w and m.p_no and w.p_no and m.p_no != w.p_no:
                     heats_ok = False
                     find("X-14", FAIL, f"{j.id} heat {h}", f"Heat {h} is P-No.{m.p_no}; {a.wps} ({w.pqr}) qualifies "
                          f"P-No.{w.p_no} only.", clause("ASME IX QW-403.11"), f"Use a WPS whose PQR covers P-No.{m.p_no}.",
-                         weld_docs(j.id) + src(m, "mtc", h))
+                         weld_docs(j.id) + src(m, "mtc", h), ev=evid(*log_ev(j.id), m))
             changed = a.welder != j.welder
             heats_ok = heats_ok and not conflict
             passed = not out and wps_ok and heats_ok and cur_ok
@@ -598,9 +614,9 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
         charted = {jid for c in dossier.pwht_charts for jid in c.joints}
         for jid, (required, basis, _ref) in pwht.items():
             if required and jid not in charted:
-                find("X-15", FAIL, f"{jid} (as-built)", f"{jid} requires PWHT ({basis}) but appears in no PWHT load.",
+                find("X-15", FAIL, f"{jid} (as-built)", f"{jid}: PWHT required ({basis[0].lower() + basis[1:]}); no PWHT record.",
                      clause("UCS-56(d), Table UCS-56-1", g.clause), f"Provide the PWHT chart and load list covering {jid}.",
-                     weld_docs(jid))
+                     weld_docs(jid), ev=evid(by_joint.get(jid), *log_ev(jid)))
                 pwht_rows.append([cell("—"), cell(jid, "reject", True), *(cell("—") for _ in range(4)), result(FAIL)])
         for c in dossier.pwht_charts:
             load = [by_joint[jid] for jid in c.joints if jid in by_joint]
@@ -622,15 +638,15 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
             if not soak_ok:
                 find("X-15", FAIL, item, f"Load {c.load_id} soaked at {num(c.soak_c, ' °C')}; required {band} (governing standard "
                      "and WPS band).", clause("Table UCS-56-1; ASME IX QW-407", g.clause),
-                     "Repeat the PWHT within the qualified band.", asb_docs)
+                     "Repeat the PWHT within the qualified band.", asb_docs, ev=evid(c))
             if not hold_ok:
                 find("X-15", FAIL, item, f"Load {c.load_id} held {num(c.hold_min, ' min')}; {hold_req:g} min required for "
                      f"{t:g} mm (1 h per 25 mm, 15 min minimum).", clause("Table UCS-56-1", g.clause),
-                     "Extend the hold time and record a new chart.", asb_docs)
+                     "Extend the hold time and record a new chart.", asb_docs, ev=evid(c))
             if not rates_ok:
                 find("X-15", FAIL, item, f"Load {c.load_id} heated at {c.heat_rate_c_per_h:g} °C/h and cooled at "
                      f"{c.cool_rate_c_per_h:g} °C/h above 425 °C; limits for {t:g} mm are {heat_max:.0f} and {cool_max:.0f} °C/h.",
-                     clause("UCS-56(d)"), "Repeat the PWHT within the rate limits.", asb_docs)
+                     clause("UCS-56(d)"), "Repeat the PWHT within the rate limits.", asb_docs, ev=evid(c))
             pwht_rows.append([
                 cell(c.load_id, bold=True), cell(", ".join(c.joints)), cell(f"{num(c.soak_c, ' °C')} (req. {band})", ok(soak_ok)),
                 cell(f"{num(c.hold_min, ' min')} (req. {hold_req:g})", ok(hold_ok)),
@@ -659,24 +675,24 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
             for r in reports:
                 if r.result is None:
                     find("X-16", WARN, f"{j.id} {r.report_no}", f"{j.id}: {r.report_no} states no result.",
-                         clause("ASME V", g.nde), f"Have {r.report_no} completed with an accept / reject result.", [r.source] if r.source else asb_docs)
+                         clause("ASME V", g.nde), f"Have {r.report_no} completed with an accept / reject result.", [r.source] if r.source else asb_docs, ev=evid(r))
                 if r.drawing_rev and dossier.drawing_rev and _norm(r.drawing_rev).removeprefix("REV") != _norm(dossier.drawing_rev).removeprefix("REV"):
                     find("X-22", WARN, f"{r.report_no} revision", f"{r.report_no} refers to drawing revision "
                          f"{r.drawing_rev}; the submitted drawing is revision {dossier.drawing_rev}.", "QC system",
                          f"Confirm {r.report_no} was examined to the current revision, or re-issue it.",
-                         [r.source] if r.source else asb_docs)
+                         [r.source] if r.source else asb_docs, ev=evid(r, dossier.drawing_evidence))
             unsigned = [r for r in reports if r.level not in ("II", "III")]
             ndocs = [r.source for r in reports if r.source] or weld_docs(j.id)
             for m, p in short.items():
                 why = "required by the code" if code_note and m == "RT" and planned.get("RT", 0) < 100 else "planned"
                 find("X-16", FAIL, j.id, f"{j.id}: {m} {p:g}% {why}, {done.get(m, 0):g}% performed.",
-                     clause("UW-11, UW-52; ASME V", g.nde), f"Perform the missing {m} on {j.id} and upload the report.", ndocs)
+                     clause("UW-11, UW-52; ASME V", g.nde), f"Perform the missing {m} on {j.id} and upload the report.", ndocs, ev=evid(j, *reports))
             for r in rejected:
-                find("X-16", FAIL, j.id, f"{j.id}: {r.report_no} ({r.method}) is rejected with no repair re-examination.",
-                     clause("UW-51, UW-52", g.nde), f"Repair {j.id} and re-examine it.", ndocs)
+                find("X-16", FAIL, j.id, f"{j.id}: {r.report_no} ({r.method}) rejected; no repair or re-examination recorded.",
+                     clause("UW-51, UW-52", g.nde), f"Repair {j.id} and re-examine it.", ndocs, ev=evid(r))
             for r in unsigned:
-                find("X-16", FAIL, j.id, f"{j.id}: {r.report_no} is not signed by a Level II or III technician.",
-                     clause("ASME V T-120", g.nde), "Have the report signed by a Level II or III technician.", ndocs)
+                find("X-16", FAIL, j.id, f"{j.id}: {r.report_no} not signed by a Level II or III technician.",
+                     clause("ASME V T-120", g.nde), "Have the report signed by a Level II or III technician.", ndocs, ev=evid(r))
             passed = not short and not rejected and not unsigned
             fmt = lambda d: " + ".join(f"{m} {p:g}%" for m, p in d.items()) or "—"
             return [cell(j.id, bold=True), cell(fmt(planned)), cell(code_note or "As planned"), cell(fmt(done), ok(not short)),
@@ -695,7 +711,7 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
             if not t_ok:
                 find("X-19", FAIL, tr.location, f"{tr.location} (heat {tr.heat}) measured {tr.measured_mm:g} mm, below the "
                      f"required {tr.required_mm:g} mm including corrosion allowance.", clause("UG-16, UG-22", "Design"),
-                     "Request a design recalculation or replace the part.", asb_docs)
+                     "Request a design recalculation or replace the part.", asb_docs, ev=evid(tr))
             test_rows.append([cell(f"Thickness · {tr.location}", bold=True), cell(f"≥ {num(tr.required_mm)}"),
                               cell(f"{tr.measured_mm:g} mm", ok(t_ok)), result(PASS if t_ok else FAIL)])
         if g.hydro_factor:
@@ -704,8 +720,8 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
             ht = dossier.hydrotest
             hclause = clause(g.hydro_clause)
             if ht is None:
-                find("X-20", FAIL, "Hydrotest", "No hydrotest record was submitted.", hclause,
-                     "Upload the hydrotest record with pressure, hold time and witness.", [])
+                find("X-20", FAIL, "Hydrotest", "No hydrotest record.", hclause,
+                     "Upload the hydrotest record with pressure, hold time and witness.", [], ev=[])
                 test_rows.append([cell("Hydrotest", bold=True), cell(f"≥ {need:g} MPa"), cell("Not recorded", "reject"),
                                   result(FAIL)])
             else:
@@ -715,14 +731,14 @@ def assess(conditions: dict, files: dict[str, list[str]], dossier: Dossier, toda
                 if not p_ok:
                     find("X-20", FAIL, "Hydrotest", f"Test pressure {num(ht.pressure_mpa, ' MPa')} is below {need:g} MPa "
                          f"({g.hydro_factor:g} × design {design_p:g} MPa, stress ratio 1).", hclause,
-                         "Repeat the hydrotest at the required pressure.", asb_docs)
+                         "Repeat the hydrotest at the required pressure.", asb_docs, ev=evid(ht))
                 if not w_ok:
                     find("X-20", WARN, "Hydrotest", "The hydrotest record has no witness signature.", hclause,
-                         "Have the inspector sign the hydrotest record.", asb_docs)
+                         "Have the inspector sign the hydrotest record.", asb_docs, ev=evid(ht))
                 if not temp_ok:
                     find("X-20", WARN, "Hydrotest", f"Metal temperature {ht.metal_temp_c:g} °C is below MDMT + 17 °C "
                          f"({mdmt + 17:g} °C) recommended during the test.", hclause,
-                         "Confirm the brittle-fracture assessment for the test temperature.", asb_docs)
+                         "Confirm the brittle-fracture assessment for the test temperature.", asb_docs, ev=evid(ht))
                 test_rows.append([cell("Hydrotest", bold=True),
                                   cell(f"≥ {need:g} MPa · witness · metal ≥ {mdmt + 17:g} °C"),
                                   cell(f"{num(ht.pressure_mpa, ' MPa')} · {num(ht.hold_min, ' min')} · {num(ht.metal_temp_c, ' °C')} · "

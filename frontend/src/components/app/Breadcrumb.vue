@@ -12,7 +12,7 @@ defineProps({
   >
     <template v-for="(item, i) in items" :key="item.label">
       <template v-if="i > 0"> / </template>
-      <RouterLink v-if="item.to" :to="item.to" class="text-faint no-underline">{{ item.label }}</RouterLink>
+      <RouterLink v-if="item.to" :to="item.to" class="text-ink underline underline-offset-[3px]">{{ item.label }}</RouterLink>
       <span v-else class="font-bold text-ink">{{ item.label }}</span>
     </template>
   </nav>

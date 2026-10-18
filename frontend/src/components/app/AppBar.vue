@@ -23,7 +23,7 @@ const signOut = () => {
 
 <template>
   <header class="flex flex-wrap items-center gap-x-5 gap-y-2.5 border-b border-ink bg-paper px-4 py-2">
-    <RouterLink to="/" class="flex flex-none items-center gap-2 no-underline" aria-label="Hibanako home">
+    <RouterLink to="/projects" class="flex flex-none items-center gap-2 no-underline" aria-label="Hibanako projects">
       <BrandStamp class="size-8" />
       <span class="text-xl leading-none font-black tracking-[0.06em] [font-stretch:115%]">HIBANAKO</span>
     </RouterLink>

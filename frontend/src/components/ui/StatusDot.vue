@@ -11,7 +11,7 @@ defineProps({
     class="inline-block rounded-full border"
     :class="[
       size,
-      status === 'HOLD' ? 'border-ink bg-signal' : status === 'REJECT' ? 'border-ink bg-ink' : 'border-ink/40 bg-pending',
+      ['HOLD', 'PENDING'].includes(status) ? 'border-ink bg-signal' : ['REJECT', 'FAIL'].includes(status) ? 'border-ink bg-ink' : 'border-ink/40 bg-pending',
     ]"
   ></span>
 </template>

@@ -3,40 +3,40 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import SectionLabel from '../ui/SectionLabel.vue'
 
 const steps = [
-  { title: 'Upload', role: 'ENGINEER', text: 'Certificates, weld logs, NDT reports and production records. PDF or scan.' },
-  { title: 'Extract', role: 'AI', text: 'Reads scanned and digital documents and pulls out heat numbers, weld IDs, procedures and inspection results, each linked to its source page.' },
-  { title: 'Map', role: 'RULES', text: 'Material → part → weld → inspection, linked into one traceability map.' },
-  { title: 'Verify', role: 'RULES', text: 'Deterministic rules check every link against your project requirements.' },
-  { title: 'Explain', role: 'AI', text: 'Describes each issue in plain language and suggests the next verification step.' },
-  { title: 'Report', role: 'ENGINEER', text: 'A ranked release-readiness report, ready for engineer sign-off.' },
+  { title: 'Upload', role: 'ENGINEER', text: 'Mill certificates, WPS and PQR, welder qualifications, weld maps and as-built records. One by one or in a single batch.' },
+  { title: 'Extract', role: 'AUTOMATED', text: 'Identifies each document, files it in the right slot, and reads heat numbers, grades, thickness ranges, positions and dates.' },
+  { title: 'Map', role: 'RULES', text: 'Links each joint on the weld map to its material, welding procedure and welder.' },
+  { title: 'Verify', role: 'RULES', text: 'Applies your governing code and any supplementary requirements to every joint.' },
+  { title: 'Explain', role: 'AUTOMATED', text: 'Describes each finding in plain language, with the clause behind it and the next step.' },
+  { title: 'Report', role: 'ENGINEER', text: 'A verdict of acceptable, not acceptable or incomplete, ready for engineer sign-off.' },
 ]
 
 const docs = [
-  { id: 'MTC-0457', kind: 'EN 10204 3.1', title: 'Mill test certificate', page: 'p.1 / 2',
-    lines: [{ top: 80, text: 'HEAT NO. 4A7721' }, { top: 120, text: 'P-112 · PIPE 4" SCH40' }],
+  { id: 'MTC-3C0954', kind: 'EN 10204 3.1', title: 'Mill test certificate', page: 'p.1 / 2',
+    lines: [{ top: 80, text: 'HEAT NO. 3C0954' }, { top: 120, text: 'S355J2+N · 12 mm' }],
     bars: [{ top: 160, widths: [100, 80, 90, 60, 75] }] },
-  { id: 'WELD-LOG-07', kind: 'SCAN', title: 'Weld log', page: 'p.1 / 1',
-    lines: [{ top: 80, text: 'W-14 · WPS-07 · FILLET 6' }, { top: 140, text: 'W-15 · WPS-07 · BUTT' }],
+  { id: 'BLK-07', kind: 'SCAN', title: 'Weld map', page: 'p.1 / 1',
+    lines: [{ top: 80, text: 'W-22 · 4F · OVERHEAD' }, { top: 140, text: 'W-17 · 2G · FLAT' }],
     bars: [{ top: 108, widths: [70] }, { top: 180, widths: [100, 85, 65] }] },
-  { id: 'NDT-UT-022', kind: 'PDF', title: 'Ultrasonic test report', page: 'p.1 / 1',
-    lines: [{ top: 80, text: 'UT-022 · W-15 · ACCEPT' }],
+  { id: 'WPQ-204', kind: 'PDF', title: 'Welder qualification', page: 'p.1 / 1',
+    lines: [{ top: 80, text: 'WELDER 204 · 2G · F, H' }],
     bars: [{ top: 120, widths: [90, 70, 100, 55] }] },
 ]
 
 const nodes = [
-  { k: 'A', cat: 'MTC-0457 p.1', text: 'HEAT NO. 4A7721', stamp: 'PASS' },
-  { k: 'B', cat: 'MTC-0457 p.1', text: 'P-112 · PIPE 4" SCH40', stamp: 'PASS' },
-  { k: 'C', cat: 'WELD-LOG-07 row 14', text: 'W-14 · WPS-07 · FILLET 6', stamp: 'HOLD' },
-  { k: 'D', cat: 'WELD-LOG-07 row 15', text: 'W-15 · WPS-07 · BUTT', stamp: 'PASS' },
+  { k: 'A', cat: 'MTC-3C0954 p.1', text: 'HEAT 3C0954 · 12 mm', stamp: 'PASS' },
+  { k: 'B', cat: 'BLK-07 weld table', text: 'WPS-09 · FCAW · 5–20', stamp: 'PASS' },
+  { k: 'C', cat: 'BLK-07 joint W-22', text: 'W-22 · 4F · OVERHEAD', stamp: 'FAIL' },
+  { k: 'D', cat: 'BLK-07 joint W-17', text: 'W-17 · 2G · FLAT', stamp: 'PASS' },
   null,
-  { k: 'F', cat: 'NDT-UT-022 p.1', text: 'UT-022 · W-15 · ACCEPT', stamp: 'PASS' },
+  { k: 'F', cat: 'WPQ-204 p.1', text: 'WELDER 204 · 2G', stamp: 'PASS' },
 ]
 
 const rows = [
-  { n: '01', text: 'W-14: no matching UT record', hold: true },
-  { n: '02', text: 'Heat 4A7721 matched to P-112' },
-  { n: '03', text: 'W-14, W-15 linked to WPS-07' },
-  { n: '04', text: 'W-15 UT accepted' },
+  { n: '01', text: 'W-22: welder 204 not qualified overhead', hold: true },
+  { n: '02', text: 'Heat 3C0954 meets EN 10204 3.1' },
+  { n: '03', text: 'W-17, W-22 within WPS-09 range' },
+  { n: '04', text: 'Welder 204 qualified for W-17' },
 ]
 
 const links = [
@@ -48,7 +48,7 @@ const links = [
 ]
 
 const EXPLANATION =
-  'W-14 needs an ultrasonic test under ITP-03 §4.2, but no NDT report in the dossier references it. Next step: request the UT report from the NDT contractor, or schedule the test.'
+  'W-22 is an overhead fillet (4F), but welder 204 is qualified for flat and horizontal only (WPQ-204). Next step: assign a welder qualified overhead, or qualify welder 204 in 4F before welding.'
 
 const root = ref(null)
 let E = null
@@ -241,10 +241,10 @@ const stampStyle = (hold) =>
   <section id="process" ref="root" aria-labelledby="proc-h">
     <div class="wrap flex flex-wrap items-end justify-between gap-5 pb-[clamp(32px,4vw,56px)]">
       <div class="flex flex-col gap-6">
-        <SectionLabel num="04" label="PROCESS" />
+        <SectionLabel label="How it works" />
         <h2 id="proc-h" class="h-section">Six steps to release.</h2>
       </div>
-      <span class="font-mono text-xs text-muted">SCROLL TO RUN ONE DOSSIER ↓</span>
+      <span class="text-sm text-muted">Scroll to follow one document package ↓</span>
     </div>
 
     <div data-k="flow" aria-label="Animated walkthrough of the Hibanako process" class="relative h-[720vh]">
@@ -266,7 +266,6 @@ const stampStyle = (hold) =>
                 <span class="text-xl font-extrabold tracking-[-0.02em]">{{ s.title }}</span>
                 <span
                   class="border border-ink px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-[0.08em]"
-                  :class="s.role === 'AI' ? 'bg-ink text-paper' : ''"
                 >{{ s.role }}</span>
               </div>
               <p data-desc class="m-0 ml-[46px] font-read text-[15px] leading-[1.5]" :style="{ display: i ? 'none' : 'block' }">{{ s.text }}</p>
@@ -286,8 +285,8 @@ const stampStyle = (hold) =>
 
             <div data-k="maplayer" class="absolute inset-0" style="transform-origin: 480px 300px">
               <div data-k="heads" class="absolute top-[92px] left-0 h-5 w-[960px] font-mono text-[11px] tracking-[0.08em] text-muted opacity-0">
-                <span class="absolute left-[40px]">MATERIAL</span><span class="absolute left-[275px]">PART</span>
-                <span class="absolute left-[510px]">WELD</span><span class="absolute left-[745px]">INSPECTION</span>
+                <span class="absolute left-[40px]">MATERIAL</span><span class="absolute left-[275px]">PROCEDURE</span>
+                <span class="absolute left-[510px]">JOINT</span><span class="absolute left-[745px]">WELDER</span>
               </div>
               <svg width="960" height="600" viewBox="0 0 960 600" class="absolute top-0 left-0 overflow-visible" fill="none">
                 <path
@@ -336,7 +335,7 @@ const stampStyle = (hold) =>
                 >
                   <span data-cat class="h-0 overflow-hidden text-[9px] tracking-[0.08em] text-muted opacity-0">{{ n.cat }}</span>
                   <span class="text-[11px] font-bold whitespace-nowrap">{{ n.text }}</span>
-                  <span :data-k="`s${n.k}`" :style="stampStyle(n.stamp === 'HOLD')">{{ n.stamp }}</span>
+                  <span :data-k="`s${n.k}`" :style="stampStyle(n.stamp === 'FAIL')">{{ n.stamp }}</span>
                 </div>
                 <div
                   v-else
@@ -344,9 +343,9 @@ const stampStyle = (hold) =>
                   class="absolute top-[125px] left-[745px] box-border flex h-14 w-[175px] flex-col justify-center gap-[3px] rounded-[3px] px-2.5 font-mono opacity-0"
                   style="border: 1.5px dashed var(--color-signal); background: color-mix(in srgb, var(--color-signal) 7%, var(--color-white))"
                 >
-                  <span class="text-[9px] tracking-[0.08em] text-muted">REQUIRED BY ITP-03 §4.2</span>
-                  <span class="text-[11px] font-bold whitespace-nowrap">UT · W-14 · NO RECORD</span>
-                  <span data-k="sE" :style="stampStyle(true)">HOLD</span>
+                  <span class="text-[9px] tracking-[0.08em] text-muted">WPQ-204 · F, H ONLY</span>
+                  <span class="text-[11px] font-bold whitespace-nowrap">NO 4F QUALIFIED WELDER</span>
+                  <span data-k="sE" :style="stampStyle(true)">FAIL</span>
                 </div>
               </template>
 
@@ -356,11 +355,11 @@ const stampStyle = (hold) =>
                 :style="`box-shadow: 0 3px 0 rgb(var(--shade) / 0.12)`"
               >
                 <div class="flex items-center justify-between font-mono text-[10px] tracking-[0.08em]">
-                  <span class="flex items-center gap-1.5"><span class="bg-ink px-[5px] py-px font-bold text-paper">AI</span>EXPLANATION</span>
+                  <span class="font-bold">EXPLANATION</span>
                   <span class="text-muted">FINDING 01</span>
                 </div>
                 <p data-k="ctext" class="m-0 min-h-[66px] font-read text-[15px] leading-[1.5]"></p>
-                <div class="font-mono text-[10px] text-muted">SRC: WELD-LOG-07 row 14 / ITP-03 §4.2</div>
+                <div class="font-mono text-[10px] text-muted">SRC: BLK-07 joint W-22 / WPQ-204 p.1</div>
               </div>
             </div>
 
@@ -371,15 +370,15 @@ const stampStyle = (hold) =>
             >
               <div class="flex items-start justify-between gap-3">
                 <div class="flex flex-col gap-[3px]">
-                  <span class="font-sans text-xl font-black">Release readiness report</span>
-                  <span class="text-[10px] text-muted">HBK-2026-041 · PS-3 PIPE SUPPORT</span>
+                  <span class="font-sans text-xl font-black">Welding assessment</span>
+                  <span class="text-[10px] text-muted">HBK-2026-041 · BLK-07 HULL BLOCK</span>
                 </div>
                 <span
                   data-k="rstamp"
-                  class="inline-block rounded-[3px] border-2 border-ink bg-signal px-3 py-[5px] text-[15px] font-bold tracking-[0.14em] opacity-0 outline outline-1 outline-offset-2 outline-ink"
-                >HOLD</span>
+                  class="inline-block rounded-[3px] border-2 border-ink bg-signal px-2.5 py-[5px] text-[12px] font-bold tracking-[0.08em] whitespace-nowrap opacity-0 outline outline-1 outline-offset-2 outline-ink"
+                >NOT ACCEPTABLE</span>
               </div>
-              <div class="flex gap-4 border-y border-ink py-2 text-[11px]"><span>6 RECORDS</span><span>4 PASS</span><span>2 HOLD</span></div>
+              <div class="flex gap-4 border-y border-ink py-2 text-[11px]"><span>6 CHECKS</span><span>5 PASS</span><span>1 FAIL</span></div>
               <div
                 v-for="row in rows"
                 :key="row.n"
@@ -389,7 +388,7 @@ const stampStyle = (hold) =>
                 <span class="text-[11px] text-muted">{{ row.n }}</span>
                 <span class="font-sans text-sm font-bold">{{ row.text }}</span>
                 <span class="rounded-[3px] border-2 border-ink px-[7px] py-0.5 text-[10px] font-bold" :class="row.hold ? 'bg-signal' : ''">
-                  {{ row.hold ? 'HOLD' : 'PASS' }}
+                  {{ row.hold ? 'FAIL' : 'PASS' }}
                 </span>
               </div>
               <div data-row class="flex flex-col gap-1.5 pt-1 text-[10px] text-muted opacity-0">

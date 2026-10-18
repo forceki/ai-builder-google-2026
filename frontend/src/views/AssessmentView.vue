@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
 import AppBar from '../components/app/AppBar.vue'
 import Breadcrumb from '../components/app/Breadcrumb.vue'
+import EvidenceSnap from '../components/assessment/EvidenceSnap.vue'
 
 // Conditions, sorted files and the review all live on the backend (/api/projects/:no/assessment).
 const SAMPLE_BATCH = [
@@ -27,29 +28,39 @@ const crumbs = computed(() => [{ label: 'PROJECTS', to: '/projects' }, { label: 
 const cat = ref(null)
 const st = ref(null)
 const error = ref('')
-const step = ref(0)
+const STEP_PATHS = ['conditions', 'documents', 'review']
+const router = useRouter()
+const step = computed({
+  get: () => Math.max(0, STEP_PATHS.indexOf(route.params.step)),
+  set: (i) => router.push({ name: 'assessment', params: { no: projectNo.value, step: STEP_PATHS[i] } }),
+})
 
-// Calls run one after another so a fast click can't overwrite a newer state with an older reply.
+// Calls run one after another so a fast click can't overwrite a newer state with an older reply. Each call is bound
+// to the project it was made for; a reply that arrives after switching projects is dropped, never shown.
 let chain = Promise.resolve()
+let poll = null
 function call(fn) {
+  const forProject = projectNo.value
   chain = chain
-    .then(fn)
+    .then(() => (forProject === projectNo.value ? fn(forProject) : null))
     .then((out) => {
+      if (!out || forProject !== projectNo.value || out.project_no !== forProject) return
       st.value = out
       error.value = ''
     })
     .catch((e) => {
-      error.value = e.message || 'Request failed'
+      if (forProject === projectNo.value) error.value = e.message || 'Request failed'
     })
   return chain
 }
 
 watch(
   projectNo,
-  (no) => {
-    step.value = 0
+  () => {
+    clearTimeout(poll)
     st.value = null
-    call(() => api.assessment.get(no))
+    error.value = ''
+    call((no) => api.assessment.get(no))
   },
   { immediate: true },
 )
@@ -72,6 +83,12 @@ const reviewMode = computed(() => run.value?.mode ?? mode.value)
 const confirmed = computed(() => !!(st.value?.conditions.confirmed || st.value?.files.length || st.value?.run))
 const canReview = computed(() => confirmed.value && !!(st.value?.run || st.value?.ready))
 const stepLocked = (i) => (i === 1 && !confirmed.value) || (i === 2 && !canReview.value)
+// A locked step opened by URL (bookmark, refresh, typed link) moves to the furthest step that is open.
+watch([st, step], () => {
+  if (!st.value || !stepLocked(step.value)) return
+  const open = canReview.value ? 2 : confirmed.value ? 1 : 0
+  router.replace({ name: 'assessment', params: { no: projectNo.value, step: STEP_PATHS[open] } })
+})
 async function confirmConditions() {
   if (!c.value.confirmed) await setCond({ confirmed: true })
   if (!error.value) step.value = 1
@@ -80,7 +97,7 @@ async function confirmConditions() {
 function setCond(patch) {
   const next = { ...c.value, ...patch }
   st.value = { ...st.value, conditions: next } // show the choice right away
-  return call(() => api.assessment.setConditions(projectNo.value, next))
+  return call((p) => api.assessment.setConditions(p, next))
 }
 function setProfile(id) {
   const p = cat.value.profiles.find((x) => x.id === id)
@@ -104,22 +121,20 @@ const head = computed(() => {
 })
 
 // Documents
-const no = () => projectNo.value
-const addFiles = (names, slot) => names.length && call(() => api.assessment.addFiles(no(), names, slot))
+const addFiles = (names, slot) => names.length && call((p) => api.assessment.addFiles(p, names, slot))
 // Real files are uploaded one by one; the backend sorts each by content and reads it in the background.
-const uploadFiles = (list, slot) => Array.from(list || []).forEach((file) => call(() => api.assessment.upload(no(), file, slot)))
+const uploadFiles = (list, slot) => Array.from(list || []).forEach((file) => call((p) => api.assessment.upload(p, file, slot)))
 const uploaded = computed(() => !st.value.sample_data)
-let poll = null
 watch(
   () => st.value?.reading.length,
   (n) => {
     clearTimeout(poll)
-    if (n) poll = setTimeout(() => call(() => api.assessment.get(no())), 2500)
+    if (n) poll = setTimeout(() => call((p) => api.assessment.get(p)), 2500)
   },
 )
 onBeforeUnmount(() => clearTimeout(poll))
-const loadSample = (slot) => call(() => api.assessment.loadSamples(no(), slot))
-const removeFiles = (q) => call(() => api.assessment.removeFiles(no(), q))
+const loadSample = (slot) => call((p) => api.assessment.loadSamples(p, slot))
+const removeFiles = (q) => call((p) => api.assessment.removeFiles(p, q))
 const onSlotFile = (slot, e) => {
   uploadFiles(e.target.files, slot)
   e.target.value = ''
@@ -141,7 +156,7 @@ const clearRejected = () => rejected.value.forEach((f) => removeFiles({ name: f.
 const running = ref(false)
 async function runAssessment() {
   running.value = true
-  await call(() => api.assessment.run(no()))
+  await call((p) => api.assessment.run(p))
   running.value = false
   if (!error.value) step.value = 2
 }
@@ -152,7 +167,7 @@ function openWaive(key) {
   waiveReason.value = ''
 }
 async function setWaiver(key, status) {
-  await call(() => api.assessment.setWaiver(no(), key, status, waiveReason.value))
+  await call((p) => api.assessment.setWaiver(p, key, status, waiveReason.value))
   if (!error.value) waiving.value = null
 }
 const fmtTime = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
@@ -553,6 +568,9 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
                   <dd class="m-0">{{ f.waiver.reason }} — {{ f.waiver.by }}, {{ fmtTime(f.waiver.at) }}</dd>
                 </template>
               </dl>
+              <div v-if="f.evidence?.length && !st.sample_data" class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-3 pt-1.5">
+                <EvidenceSnap v-for="(e, i) in f.evidence" :key="i" :project-no="projectNo" :evidence="e" />
+              </div>
               <div class="flex flex-wrap items-center gap-2 pt-1">
                 <template v-if="waiving === f.key">
                   <input
@@ -608,7 +626,7 @@ const optClass = (on) => (on ? 'bg-ink text-paper' : 'bg-white text-ink')
           </div>
         </section>
         <p v-if="st.sample_data" class="m-0 font-mono text-[11px] leading-relaxed text-faint">
-          SAMPLE DATA · Results come from the sample dossier until document extraction feeds the assessment. Clause numbers and
+          SAMPLE DATA · Results come from the sample documents until document extraction feeds the assessment. Clause numbers and
           limits must be confirmed by an engineer against the contract editions.
         </p>
       </div>

@@ -121,7 +121,7 @@ def test_nde_rejected_or_unsigned_report_fails():
                else n for n in SAMPLE_DOSSIER.nde_reports]
     r = run(present=ALL, dossier=replace(SAMPLE_DOSSIER, nde_reports=reports))
     texts = [f.statement for f in r.findings if f.rule_id == "X-16"]
-    assert any("RT-019 (RT) is rejected" in t for t in texts) and any("VT-031 is not signed" in t for t in texts)
+    assert any("RT-019 (RT) rejected" in t for t in texts) and any("VT-031 not signed" in t for t in texts)
 
 
 def test_hydrotest_and_thickness():
@@ -318,13 +318,10 @@ async def test_api_flow(session):
     assert out.run.conclusion == WITH_NOTES and out.run.result["findings"][0]["waiver"]["by"] == "QE, Quality engineer"
 
     rep = await call(AssessmentController.get_report)
-    assert rep["report_no"] == "HBK-RR-001" and rep["result"]["verdict"] == WITH_NOTES and not rep["stale"]
-    assert rep["references"][:3] == [
-        "ASME BPVC Section VIII, Division 1, Rules for Construction of Pressure Vessels",
-        "ASME BPVC Section IX, Welding, Brazing, and Fusing Qualifications",
-        "ASME BPVC Section V, Nondestructive Examination",
-    ]
-    assert {"label": "Condition set", "value": out.condition_hash, "unit": ""} in rep["traceability"]
+    assert rep["report_no"] == "HBK-RR-001" and rep["verdict"] == WITH_NOTES and not rep["stale"]
+    assert rep["references"][:3] == ["ASME VIII-1", "ASME IX", "ASME V"]
+    assert rep["counts"] == {"nc": 0, "obs": 0, "waived": 1} and rep["waived"][0]["items"] == ["W-22"]
+    assert out.condition_hash in rep["footer"]
 
     out = await call(AssessmentController.set_conditions,
                      data=ConditionsIn(profile="plant-vessel", governing="ASME VIII-1", mdmt_c=-30))
@@ -394,3 +391,55 @@ def test_intake_rejects_2_2_certificates_and_drawings_without_joints():
         "design_temp_c": None, "wall_thickness_mm": None, "pipe_od_mm": None, "general_nde": None, "joints": [],
         "page": 1, "confidence": "high"})
     assert intake_rejection("drawing", drawing).startswith("DRW-01")
+
+
+def test_snapshot_crops_the_box_and_keeps_the_row_label():
+    import io
+
+    from PIL import Image
+
+    from app.assessment.snapshot import NoPreview, snapshot
+
+    page = Image.new("RGB", (1000, 1000), "white")
+    buf = io.BytesIO()
+    page.save(buf, format="PNG")
+    full = Image.open(io.BytesIO(snapshot("scan.png", buf.getvalue(), 1, None)))
+    assert full.size == (1000, 1000)
+    row = Image.open(io.BytesIO(snapshot("scan.png", buf.getvalue(), 1, (400, 400, 420, 800))))
+    # one row: from the page margin (5 %) to the box + 12 %, 4 % above and below
+    assert row.size == (870, 100)
+    with pytest.raises(NoPreview):
+        snapshot("log.xlsx", b"", 1, None)
+
+
+async def test_snapshot_endpoint_only_serves_this_assessments_documents(session):
+    from litestar.exceptions import NotFoundException
+
+    user = User(email="qe@c.com", name="QE", role="Quality engineer", password_hash="-")
+    session.add(user)
+    await session.flush()
+    session.add(Project(no="PRJ-3", name="Other", owner_id=user.id))
+    await session.flush()
+    api = AssessmentController(owner=None)
+    with pytest.raises(NotFoundException):
+        await AssessmentController.get_snapshot.fn(api, db=session, user=user, project_no="PRJ-3",
+                                                   file="MTC_4A7721.pdf", page=1, box=None)
+
+
+def test_report_groups_findings_pareto_style():
+    from datetime import datetime
+
+    from app.assessment.report import build_report
+
+    r = run(present=ALL)
+    findings = r.as_dict()["findings"]
+    extra = {**findings[0], "item": "W-12", "id": "F-0099", "key": "X-16:W-12b"}  # same problem on another joint
+    result = {**r.as_dict(), "findings": [*findings, extra]}
+    rep = build_report(project_no="PRJ-7", project_name="Skid", prepared_by="QE", conditions=default_conditions(),
+                       documents={"mtc": ["a.pdf"]}, result=result, run_number=1, run_at=datetime(2026, 10, 18, 9),
+                       condition_hash="abc", rule_pack="RS-3.1")
+    assert rep["verdict"] == NOT_ACCEPTABLE and rep["conclusion"].startswith("Not acceptable.")
+    nde = next(i for i in rep["issues"] if i["rule_id"] == "X-16")
+    assert nde["area"] == "NDE" and not nde["finding"].startswith("W-12:")
+    assert rep["areas"][0]["nc"] >= rep["areas"][-1]["nc"]  # Pareto order
+    assert [i["no"] for i in rep["issues"]] == list(range(1, len(rep["issues"]) + 1))

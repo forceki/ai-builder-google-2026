@@ -35,11 +35,20 @@ export const session = {
   },
 }
 
+// fetch, but a request that never reaches the server says so instead of a bare "Failed to fetch".
+async function reach(url, init) {
+  try {
+    return await fetch(url, init)
+  } catch (e) {
+    throw new ApiError(0, `Could not reach the server for ${(init.method || 'GET').toUpperCase()} ${url.replace(/^.*?\/api/, '/api')}: ${e.message}. Check that the backend is running and that no browser extension or old service worker is blocking it.`)
+  }
+}
+
 async function request(method, path, { json, form } = {}) {
   const headers = {}
   if (json) headers['Content-Type'] = 'application/json'
   if (token) headers.Authorization = `Bearer ${token}`
-  const res = await fetch(`${API_URL}/api${path}`, {
+  const res = await reach(`${API_URL}/api${path}`, {
     method,
     headers,
     body: json ? JSON.stringify(json) : form,
@@ -49,6 +58,14 @@ async function request(method, path, { json, form } = {}) {
   if (res.status === 401 && token) onUnauthorized()
   if (!res.ok) throw new ApiError(res.status, body?.detail)
   return body
+}
+
+// Binary responses (e.g. evidence snapshots) as an object URL; the caller revokes it.
+async function blobUrl(path) {
+  const res = await reach(`${API_URL}/api${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  if (res.status === 401 && token) onUnauthorized()
+  if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => null))?.detail)
+  return URL.createObjectURL(await res.blob())
 }
 
 // Resolves to null instead of throwing when the resource does not exist yet.
@@ -106,6 +123,11 @@ export const api = {
       return request('POST', `${p(no)}/assessment/documents`, { form })
     },
     report: (no) => request('GET', `${p(no)}/assessment/report`),
+    snapshot(no, { file, page, box }) {
+      const q = new URLSearchParams({ file, page: String(page || 1) })
+      if (box) q.set('box', box.join(','))
+      return blobUrl(`${p(no)}/assessment/snapshot?${q}`)
+    },
     run: (no) => request('POST', `${p(no)}/assessment/runs`),
     setWaiver: (no, key, status, reason = '') =>
       request('PATCH', `${p(no)}/assessment/findings/${encodeURIComponent(key)}`, { json: { status, reason } }),

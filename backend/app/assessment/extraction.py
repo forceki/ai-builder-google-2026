@@ -15,9 +15,16 @@ from app.config import get_settings
 Confidence = Literal["high", "low"]
 
 
+Box = list[int] | None
+BOX = ("Bounding box on the page around {what}, as [ymin, xmin, ymax, xmax] scaled 0–1000; "
+       "null for spreadsheets or when it cannot be located")
+
+
 class Record(BaseModel):
     page: int = Field(description="1-based page (or sheet) the values were read from")
     confidence: Confidence = Field(description='"low" if any value was hard to read, handwritten, ambiguous or inferred')
+    box_2d: Box = Field(default=None, description=BOX.format(what="all the values of this record (the table row, "
+                                                                    "the report block or the drawing title block)"))
 
 
 # Slot classification -------------------------------------------------------------------------------------------
@@ -68,6 +75,8 @@ class MtcHeat(Record):
     impact_avg_j: float | None = Field(description="Charpy average energy in J, if tested")
     hardness: str | None = Field(description="Hardness result as printed, if any")
     signed: bool = Field(description="True if the authorised signatory field is filled (name, signature or stamp)")
+    tensile_box_2d: Box = Field(default=None, description=BOX.format(what="the tensile strength result and requirement"))
+    signature_box_2d: Box = Field(default=None, description=BOX.format(what="the authorised signatory field"))
 
 
 class MtcDoc(BaseModel):
@@ -86,12 +95,14 @@ class WpsProcedure(Record):
     preheat_min_c: float | None
     current_min_a: float | None
     current_max_a: float | None
+    current_box_2d: Box = Field(default=None, description=BOX.format(what="the welding current range"))
     pwht: bool = Field(description="True if the WPS includes post-weld heat treatment")
     pwht_temp_c: float | None = Field(description="PWHT holding temperature, or the middle of the range, in °C")
     pwht_temp_tolerance_c: float | None = Field(description="± tolerance on the PWHT temperature, if stated")
     pwht_hold_min: float | None
     pwht_joints: list[str] = Field(default_factory=list,
                                    description='Weld IDs if PWHT is limited to certain welds (e.g. "W-04 only"); else empty')
+    pwht_box_2d: Box = Field(default=None, description=BOX.format(what="the post-weld heat treatment entry"))
     hardness_hv10: float | None = Field(description="Maximum PQR hardness in HV10, if a hardness survey is shown")
     impact_temp_c: float | None = Field(description="PQR Charpy test temperature, if shown")
 
@@ -215,6 +226,8 @@ Release decisions are made from what you return, so accuracy matters more than c
 - A signature is present when the field holds a name, signature, initials or stamp; it is absent when blank, a dash
   or "(not signed)".
 - Read tables row by row; values in one row belong to the same record.
+- Boxes: give each box_2d as [ymin, xmin, ymax, xmax] on the record's page, scaled 0–1000, tight around the values
+  with a little margin. Use null for spreadsheets or text you cannot place.
 Return every matching record in the document."""
 
 HINTS = {

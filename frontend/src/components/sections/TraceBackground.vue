@@ -31,7 +31,6 @@ function scan() {
   B.nodes = [...document.querySelectorAll('[data-trace-node]')].map((el, i) => {
     const r = el.getBoundingClientRect()
     return {
-      n: el.dataset.traceNum,
       label: el.dataset.traceLabel,
       x: r.left,
       y: r.top + r.height / 2 + scrollY,
@@ -160,7 +159,7 @@ function draw(t) {
     ctx.translate(Math.max(5, sx - 12), h - 24)
     ctx.rotate(-Math.PI / 2)
     const pct = Math.round(Math.min(1, Math.max(0, (end - top) / (last - top))) * 100)
-    ctx.fillText(`TRACE ${cur.n} · ${cur.label} · ${pct}%`, 0, 0)
+    ctx.fillText(`TRACE · ${cur.label.toUpperCase()} · ${pct}%`, 0, 0)
     ctx.restore()
   }
 

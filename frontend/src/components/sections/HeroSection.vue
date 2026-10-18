@@ -126,20 +126,21 @@ const verdictText = computed(() =>
     class="wrap flex flex-wrap items-center gap-[clamp(40px,5vw,72px)] pt-[clamp(40px,7vw,96px)] pb-[clamp(64px,10vw,140px)]"
   >
     <div class="flex min-w-0 flex-[1_1_420px] flex-col gap-7">
-      <SectionLabel num="02" label="OVERVIEW" />
-      <h1 id="hero-h" class="m-0 text-[clamp(44px,6vw,84px)] leading-[1.02] font-extrabold tracking-[-0.022em] text-balance">
-        Every weld, every cert, one thread.
+      <SectionLabel label="Weld quality assurance" />
+      <h1 id="hero-h" class="m-0 text-[clamp(40px,5.2vw,68px)] leading-[1.05] font-semibold tracking-[-0.035em] text-balance">
+        Release decisions for when trust matters.
       </h1>
-      <p data-reveal class="m-0 max-w-[480px] text-[clamp(17px,1.4vw,19px)] leading-[1.6] text-pretty">
-        Hibanako uses AI to read your material certificates, weld records and inspection reports, connects them into one
-        traceable thread, and shows exactly what's missing before you release.
+      <p data-reveal class="m-0 max-w-[500px] text-[clamp(17px,1.4vw,19px)] leading-[1.6] text-pretty">
+        Hibanako checks every joint in a welding document package against your governing code: mill certificates, WPS and PQR,
+        welder qualifications and PWHT. Run it at plan review to catch problems before the first weld, and again on the
+        as-built record before release.
       </p>
       <div class="flex flex-wrap items-center gap-6 pt-2">
-        <a href="#process" class="font-mono text-sm underline-offset-4">See the process →</a>
+        <a href="#contact" class="btn-cta">Request a demo</a>
+        <a href="#cost" class="text-[15px] font-semibold underline-offset-4">See the cost case →</a>
       </div>
-      <span class="font-mono text-xs tracking-[0.06em] text-muted">AI EXTRACTION · RULE-BASED VERIFICATION · ENGINEER SIGN-OFF</span>
-      <span class="font-mono text-xs tracking-[0.06em]">
-        PLANT · SHIPBUILDING · MANUFACTURING — <a href="#coverage">SEE STANDARDS</a>
+      <span class="text-sm text-muted">
+        For plant, shipbuilding and manufacturing teams. <a href="#coverage" class="font-medium">See supported codes</a>
       </span>
     </div>
 
@@ -220,7 +221,7 @@ const verdictText = computed(() =>
         </div>
 
         <div class="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
-          <span class="font-mono text-[10px] font-bold tracking-[0.08em] text-muted">SORTED BY AI</span>
+          <span class="font-mono text-[10px] font-bold tracking-[0.08em] text-muted">SORTED BY TYPE</span>
           <div
             v-for="s in slots"
             :key="s.k"
@@ -261,7 +262,7 @@ const verdictText = computed(() =>
       </div>
 
       <div class="flex flex-wrap items-center justify-between gap-2.5 px-1 font-mono text-[11px] tracking-[0.06em] text-muted">
-        <figcaption>SAMPLE RUN · AI READS, RULES DECIDE</figcaption>
+        <figcaption>SAMPLE RUN · CHECKED TO CODE</figcaption>
         <RouterLink to="/projects" class="font-bold text-ink">TRY THE ASSESSMENT →</RouterLink>
       </div>
     </figure>

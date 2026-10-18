@@ -27,10 +27,11 @@ onBeforeUnmount(() => {
 })
 
 const nav = [
-  { num: '04', label: 'Process', href: '#process' },
-  { num: '05', label: 'Checks', href: '#checks' },
-  { num: '08', label: 'Principles', href: '#principles' },
-  { num: '09', label: 'Contact', href: '#contact' },
+  { label: 'Cost', href: '#cost' },
+  { label: 'Process', href: '#process' },
+  { label: 'Checks', href: '#checks' },
+  { label: 'Principles', href: '#principles' },
+  { label: 'Contact', href: '#contact' },
 ]
 </script>
 
@@ -63,16 +64,14 @@ const nav = [
       :class="open ? 'flex' : 'hidden'"
       @click="(e) => e.target.closest('a') && (open = false)"
     >
-    <nav aria-label="Primary" class="flex flex-col gap-3 font-mono text-[15px] lg:flex-row lg:flex-wrap lg:gap-x-7 lg:gap-y-1.5 lg:text-[13px]">
-      <a v-for="item in nav" :key="item.href" :href="item.href" class="flex gap-1.5 no-underline hover:underline">
-        <span class="text-muted">{{ item.num }}</span>{{ item.label }}
-      </a>
+    <nav aria-label="Primary" class="flex flex-col gap-3 text-[15px] font-medium lg:flex-row lg:flex-wrap lg:gap-x-8 lg:gap-y-1.5 lg:text-sm">
+      <a v-for="item in nav" :key="item.href" :href="item.href" class="no-underline hover:underline">{{ item.label }}</a>
     </nav>
 
     <div class="flex items-center gap-5">
       <ThemeToggle />
-      <RouterLink v-if="signedIn" to="/projects" class="font-mono text-[13px] underline-offset-4">Projects →</RouterLink>
-      <RouterLink v-else to="/login" class="font-mono text-[13px] underline-offset-4">Log in</RouterLink>
+      <RouterLink v-if="signedIn" to="/projects" class="text-sm font-medium underline-offset-4">Projects →</RouterLink>
+      <RouterLink v-else to="/login" class="text-sm font-medium underline-offset-4">Log in</RouterLink>
     </div>
     </div>
   </header>

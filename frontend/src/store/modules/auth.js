@@ -1,4 +1,5 @@
-import { api, session } from '../../api/client'
+import { ApiError, api, session } from '../../api/client'
+import { reportError } from '../../composables/useErrors'
 
 export const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL || 'demo@hibanako.app'
 export const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || 'hibanako-demo'
@@ -70,8 +71,9 @@ export default {
       if (!session.token || state.user) return
       try {
         commit('setUser', await api.auth.me())
-      } catch {
-        return
+      } catch (e) {
+        // An expired token is handled by session.onUnauthorized; anything else (server down, network) is shown.
+        if (!(e instanceof ApiError && e.status === 401)) reportError(e, 'restoring your session')
       }
     },
     signOut({ commit }) {

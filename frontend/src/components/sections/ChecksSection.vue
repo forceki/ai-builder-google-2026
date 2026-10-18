@@ -12,9 +12,9 @@ const checks = computed(() => store.state.report.checks)
 <template>
   <section id="checks" aria-labelledby="chk-h" class="wrap flex flex-wrap gap-x-[clamp(40px,5vw,72px)] gap-y-10 py-[clamp(64px,10vw,140px)]">
     <div class="flex max-w-[420px] min-w-0 flex-[1_1_300px] flex-col gap-6">
-      <SectionLabel num="05" label="CRITICAL CHECKS" />
+      <SectionLabel label="Critical checks" />
       <h2 id="chk-h" class="h-section">Four checks. Most of the risk.</h2>
-      <p class="m-0 font-mono text-xs leading-relaxed text-muted">Pareto scope: the vital few checks behind most release delays.</p>
+      <p class="m-0 text-[17px] leading-[1.55] text-muted">We focus on the few checks behind most release delays, and run them on every document package.</p>
     </div>
     <div class="grid min-w-0 flex-[2_1_560px] grid-cols-[repeat(auto-fit,minmax(min(100%,270px),1fr))] gap-4">
       <article
@@ -27,7 +27,7 @@ const checks = computed(() => store.state.report.checks)
           <span>CHECK {{ c.id }}</span>
           <StatusDot :status="c.status" />
         </div>
-        <h3 class="m-0 text-[22px] font-extrabold tracking-[-0.02em]">{{ c.title }}</h3>
+        <h3 class="m-0 text-xl font-semibold tracking-[-0.015em]">{{ c.title }}</h3>
         <p class="m-0 flex-1 text-base leading-[1.45]">{{ c.question }}</p>
         <div class="flex items-center gap-3 border-t border-dashed border-ink/30 pt-3 font-mono text-xs">
           <StatusStamp :status="c.status" :rot="c.rot" />{{ c.note }}

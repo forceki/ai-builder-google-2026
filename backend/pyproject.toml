@@ -17,6 +17,8 @@ dependencies = [
     "google-auth[requests]>=2.40",
     "alembic>=1.14",
     "google-cloud-tasks>=2.19",
+    "pypdfium2>=4.30",
+    "pillow>=11",
 ]
 
 [dependency-groups]

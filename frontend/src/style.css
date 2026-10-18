@@ -22,6 +22,14 @@
 
   --font-sans: 'Archivo', Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+  --animate-row-in: row-in 0.2s ease-out both;
+  @keyframes row-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
   --font-read: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
 }
 

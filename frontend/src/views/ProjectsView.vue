@@ -205,7 +205,7 @@ const onSaved = () => {
           </tbody>
         </table>
       </div>
-      <p class="m-0 font-mono text-[11px] text-faint">Click a project to open its workspace. Status reflects the last rule check.</p>
+      <p class="m-0 font-mono text-[11px] text-faint">Click a project to open its assessment. Status reflects the last rule check.</p>
     </main>
 
     <AppFooter />

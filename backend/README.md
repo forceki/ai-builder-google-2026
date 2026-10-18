@@ -9,6 +9,7 @@ Litestar API with background jobs (Google Cloud Tasks when deployed, in-process 
 | `app/ai/` | Gemini client, document classification, extraction and finding explanations |
 | `app/pipeline/` | Normalises extracted data and builds the trace map |
 | `app/rules/` | Release rules (material traceability, weld linkage, NDT evidence, completeness) |
+| `app/assessment/` | Welding assessment: conditions catalog, file sorting, sample dossier and the WPS/WPQ/PWHT rules engine |
 | `app/models/` | SQLAlchemy models |
 | `app/schemas/` | Pydantic schemas for extraction and the API |
 | `app/jobs.py` | Background jobs: read a document, settle and run checks |

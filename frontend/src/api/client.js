@@ -87,6 +87,23 @@ export const api = {
     latestComplete: (no) => orNull(request('GET', `${p(no)}/checks/latest?complete=true`)),
   },
   trace: (no) => request('GET', `${p(no)}/trace`),
+  assessment: {
+    catalog: () => request('GET', '/assessment/catalog'),
+    get: (no) => request('GET', `${p(no)}/assessment`),
+    setConditions: (no, conditions) => request('PUT', `${p(no)}/assessment/conditions`, { json: conditions }),
+    addFiles: (no, names, slot) => request('POST', `${p(no)}/assessment/files`, { json: { names, slot } }),
+    removeFiles(no, { name, slot } = {}) {
+      const q = new URLSearchParams()
+      if (name) q.set('name', name)
+      if (slot) q.set('slot', slot)
+      return request('DELETE', `${p(no)}/assessment/files?${q}`)
+    },
+    loadSamples: (no, slot) => request('POST', `${p(no)}/assessment/samples`, { json: { slot } }),
+    report: (no) => request('GET', `${p(no)}/assessment/report`),
+    run: (no) => request('POST', `${p(no)}/assessment/runs`),
+    setWaiver: (no, key, status, reason = '') =>
+      request('PATCH', `${p(no)}/assessment/findings/${encodeURIComponent(key)}`, { json: { status, reason } }),
+  },
   events(no) {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
     const base = API_URL ? API_URL.replace(/^http/, 'ws') : `${scheme}://${location.host}`

@@ -12,8 +12,8 @@ const router = createRouter({
     { path: '/terms', name: 'terms', component: () => import('../views/LegalView.vue'), props: { doc: 'terms' } },
     { path: '/privacy', name: 'privacy', component: () => import('../views/LegalView.vue'), props: { doc: 'privacy' } },
     { path: '/projects', name: 'projects', component: () => import('../views/ProjectsView.vue'), meta: signedIn },
-    { path: '/projects/:no', name: 'workspace', component: () => import('../views/WorkspaceView.vue'), meta: signedIn },
-    { path: '/projects/:no/report', name: 'report', component: () => import('../views/ReportView.vue'), meta: signedIn },
+    { path: '/projects/:no', name: 'assessment', component: () => import('../views/AssessmentView.vue'), meta: signedIn },
+    { path: '/projects/:no/report', name: 'report', component: () => import('../views/AssessmentReportView.vue'), meta: signedIn },
   ],
   scrollBehavior(to, from, saved) {
     if (saved) return saved
